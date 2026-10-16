@@ -12,6 +12,7 @@ export function useMediaQuery(query: string): boolean {
   );
 }
 
-/** Phones (Tailwind `md` breakpoint). */
-export const useIsMobile = () => useMediaQuery('(max-width: 767px)');
+/** Phone layout: narrow screens, or short touch screens (a phone in landscape). Same as the `mobile:` CSS variant. */
+export const MOBILE_QUERY = '(max-width: 767px), (max-height: 500px) and (pointer: coarse)';
+export const useIsMobile = () => useMediaQuery(MOBILE_QUERY);
 export const useIsPortrait = () => useMediaQuery('(orientation: portrait)');

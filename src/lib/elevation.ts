@@ -29,9 +29,16 @@ function loadTile(z: number, x: number, y: number): Promise<ImageData> {
     img.onerror = () => reject(new Error(`Falha ao carregar tile ${key}`));
     img.src = TERRARIUM_TILES.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y));
   });
-  tileCache.set(key, promise);
-  promise.catch(() => tileCache.delete(key));
-  return promise;
+  // A tile that never answers must not hang the route: give up after 8 s (synthetic fallback).
+  const timed = Promise.race([
+    promise,
+    new Promise<ImageData>((_, reject) => setTimeout(() => reject(new Error(`Tempo esgotado no tile ${key}`)), 8000)),
+  ]);
+  tileCache.set(key, timed);
+  timed.catch(() => tileCache.delete(key));
+  // The image may still fail after the timeout won the race; that late error is expected.
+  promise.catch(() => undefined);
+  return timed;
 }
 
 function project(c: Coordinates, z: number): { tx: number; ty: number; px: number; py: number } {

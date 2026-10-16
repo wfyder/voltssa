@@ -20,7 +20,7 @@ function Legend() {
   return (
     <div
       data-testid="map-legend"
-      className="absolute top-3 z-10 flex gap-4 rounded-md border border-line bg-surface px-3 py-1.5 text-xs text-muted transition-[left] duration-300 max-md:hidden"
+      className="absolute top-3 z-10 flex gap-4 rounded-md border border-line bg-surface px-3 py-1.5 text-xs text-muted transition-[left] duration-300 mobile:hidden"
       style={{ left: sidebarOpen ? 352 : 32 }}
     >
       {(Object.keys(STATUS_LABEL) as StationStatus[]).map((s) => (
@@ -43,7 +43,7 @@ function LocationNotice() {
   const setPickingLocation = useAppStore((s) => s.setPickingLocation);
   if (!notice) return null;
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-14 z-30 flex justify-center px-3 md:top-3">
+    <div className="pointer-events-none absolute inset-x-0 top-14 z-30 flex justify-center px-3 desktop:top-3">
       <div
         role="status"
         data-testid="location-notice"
@@ -83,9 +83,21 @@ export default function App() {
   const navigating = useAppStore((s) => s.navigation !== null);
   const carMode = useAppStore((s) => s.carMode);
 
-  // Ask for the device position as soon as the app opens.
+  // Locate automatically only if the user already allowed it; otherwise the permission prompt
+  // waits for a tap on "Minha localização" (no prompt out of nowhere on page load).
   useEffect(() => {
-    void useAppStore.getState().locateMe();
+    let cancelled = false;
+    navigator.permissions
+      ?.query({ name: 'geolocation' })
+      .then((status) => {
+        if (!cancelled && status.state === 'granted') void useAppStore.getState().locateMe();
+      })
+      .catch(() => {
+        /* Permissions API unavailable: stay quiet, the button still works */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   if (carMode) return <CarMode />;

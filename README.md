@@ -48,8 +48,14 @@ npm run build      # typecheck + build de produção
 
 ## Celular e GPS
 
-`npm run dev` também expõe o app na rede local. O navegador só libera o GPS em HTTPS (ou `localhost`), então para
-testar a localização no celular use um endereço HTTPS (por exemplo, um deploy no Vercel, Netlify ou GitHub Pages).
+`npm run dev` atende só em `localhost`. Para abrir no celular pela rede local use `npm run dev:lan` (expõe o servidor
+para a rede: use só em redes confiáveis). O navegador só libera o GPS em HTTPS (ou `localhost`), então para testar a
+localização no celular use um endereço HTTPS (por exemplo, um deploy no Vercel, Netlify ou GitHub Pages).
+
+Privacidade: o app só pede o GPS quando você toca em "Minha localização" (ou automaticamente, se a permissão já foi
+dada). Para traçar rotas, a origem (arredondada para ~10 m) e o destino são enviados ao OSRM público. O build de
+produção inclui uma Content-Security-Policy que limita scripts à própria origem e a rede aos serviços de mapa, relevo
+e rotas.
 
 O modo carro é uma interface web para celular no suporte ou navegador do carro. Rodar dentro do CarPlay exige um
 app iOS nativo (CarPlay framework, categoria *EV charging*) com autorização da Apple.
@@ -67,8 +73,9 @@ src/
 
 ## Testes
 
-`npm test` roda os testes unitários das regras de negócio. Todos os controles da interface têm `data-testid` e o
-estado fica exposto em `window.__voltStore` para automação E2E (Playwright).
+`npm test` roda os testes unitários das regras de negócio. Todos os controles da interface têm `data-testid`. Em
+desenvolvimento ou em um build com `VITE_E2E=1`, o estado fica exposto em `window.__voltStore` para automação E2E
+(Playwright); no build de produção normal ele não é exposto.
 
 ## Limitações
 

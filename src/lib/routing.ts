@@ -47,10 +47,27 @@ interface OsrmResponse {
   routes?: { distance: number; duration: number; geometry: LineString; legs: { steps: OsrmStep[] }[] }[];
 }
 
+/** A stalled request falls back to the straight-line route instead of hanging the UI. */
+export const OSRM_TIMEOUT_MS = 8000;
+/** Origin sent with ~11 m precision (enough to snap to the right street); other points ~1 m. */
+const ORIGIN_DECIMALS = 4;
+const POINT_DECIMALS = 5;
+
+/** `lng,lat` for the OSRM URL, rounded so the exact GPS fix is not sent to a third party. */
+export function osrmCoordinate(c: Coordinates, decimals: number): string {
+  if (!Number.isFinite(c.lat) || !Number.isFinite(c.lng)) throw new Error('Coordenada inválida');
+  return `${c.lng.toFixed(decimals)},${c.lat.toFixed(decimals)}`;
+}
+
+function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
+  const timeout = AbortSignal.timeout(ms);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 async function osrmRoute(points: Coordinates[], signal: AbortSignal | undefined, alternatives: boolean): Promise<BaseRoute[]> {
-  const coords = points.map((p) => `${p.lng},${p.lat}`).join(';');
+  const coords = points.map((p, i) => osrmCoordinate(p, i === 0 ? ORIGIN_DECIMALS : POINT_DECIMALS)).join(';');
   const url = `${OSRM_URL}/${coords}?overview=full&geometries=geojson&steps=true&alternatives=${alternatives ? ALTERNATIVES : 'false'}`;
-  const res = await fetch(url, { signal });
+  const res = await fetch(url, { signal: withTimeout(signal, OSRM_TIMEOUT_MS), referrerPolicy: 'no-referrer' });
   if (!res.ok) throw new Error(`OSRM HTTP ${res.status}`);
   const data = (await res.json()) as OsrmResponse;
   if (data.code !== 'Ok' || !data.routes?.length) throw new Error(`OSRM: ${data.code}`);
@@ -62,12 +79,16 @@ async function osrmRoute(points: Coordinates[], signal: AbortSignal | undefined,
   }));
 }
 
-/** A route through a via point has an extra arrive/depart pair in the middle; drop it. */
+/**
+ * A route through a via point has an extra arrive/depart pair in the middle. The arrive has no
+ * length and is dropped; the depart keeps its distance (so later maneuvers stay in place) and
+ * becomes a plain "continue".
+ */
 export function stripViaSteps(steps: OsrmStep[]): OsrmStep[] {
-  return steps.filter((st, i) => {
-    if (st.maneuver.type === 'arrive') return i === steps.length - 1;
-    if (st.maneuver.type === 'depart') return i === 0;
-    return true;
+  return steps.flatMap((st, i) => {
+    if (st.maneuver.type === 'arrive') return i === steps.length - 1 ? [st] : [];
+    if (st.maneuver.type === 'depart' && i > 0) return [{ ...st, maneuver: { ...st.maneuver, type: 'continue' } }];
+    return [st];
   });
 }
 
@@ -136,6 +157,25 @@ async function profileFor(base: BaseRoute): Promise<{ profile: ProfilePoint[]; s
   }
   const { elevations, source } = await sampleElevations(points);
   return { profile: distances.map((distanceKm, i) => ({ distanceKm, elevationM: elevations[i] })), source };
+}
+
+/**
+ * Re-plans an existing route for another vehicle or battery level without new requests:
+ * the relief profiles are kept, only energy and the choice are recomputed.
+ */
+export function replanForVehicle(route: SmartRoute, vehicle: Vehicle, batteryPct: number): SmartRoute {
+  const options = route.options.map((o) => ({ ...o, energy: computeTopographyEnergy(vehicle, o.profile) }));
+  const decision = chooseRoute(options, vehicle, batteryPct);
+  return {
+    ...route,
+    ...options[decision.index],
+    options,
+    evaluations: decision.evaluations,
+    chosenIndex: decision.index,
+    recommendedIndex: decision.index,
+    choiceReason: decision.reason,
+    reachable: decision.reachable,
+  };
 }
 
 /** Rebuilds the route around another option (when the driver picks an alternative). */

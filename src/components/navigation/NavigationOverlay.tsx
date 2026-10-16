@@ -31,7 +31,7 @@ function IconButton({
       title={label}
       onClick={onClick}
       className={cn(
-        'flex h-9 min-w-9 items-center justify-center rounded-md px-2 text-sm transition-colors max-md:h-11 max-md:min-w-11',
+        'flex h-9 min-w-9 items-center justify-center rounded-md px-2 text-sm transition-colors mobile:h-11 mobile:min-w-11',
         active ? 'bg-accent text-accent-fg' : 'text-fg-2 hover:bg-surface-3',
       )}
     >
@@ -86,7 +86,7 @@ export function NavigationOverlay() {
   return (
     <>
       {/* Next maneuver */}
-      <div className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center px-3 md:px-4">
+      <div className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center px-3 desktop:px-4">
         <div data-testid="nav-maneuver" className="pointer-events-auto w-full max-w-md overflow-hidden rounded-md border border-line bg-surface shadow-xl">
           <div className="flex items-center gap-4 p-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-accent text-accent-fg">
@@ -102,7 +102,7 @@ export function NavigationOverlay() {
             </div>
           </div>
           {current?.name && (
-            <div className="border-t border-line px-4 py-1.5 text-xs text-fg-2 md:hidden">Você está na {current.name}</div>
+            <div className="border-t border-line px-4 py-1.5 text-xs text-fg-2 desktop:hidden">Você está na {current.name}</div>
           )}
           {after && (
             <div className="flex items-center gap-2 border-t border-line bg-surface-2 px-4 py-2 text-xs text-muted" data-testid="nav-then">
@@ -126,7 +126,7 @@ export function NavigationOverlay() {
 
       {/* Current street */}
       {current?.name && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[92px] z-30 flex justify-center max-md:hidden">
+        <div className="pointer-events-none absolute inset-x-0 bottom-[92px] z-30 flex justify-center mobile:hidden">
           <div data-testid="nav-current-street" className="rounded-md bg-surface/90 px-3 py-1 text-sm text-fg-2 shadow">
             {current.name}
           </div>
@@ -137,7 +137,7 @@ export function NavigationOverlay() {
       {showSteps && (
         <div
           data-testid="nav-steps"
-          className="ev-scroll absolute top-3 bottom-24 left-3 z-30 w-[300px] overflow-y-auto max-md:right-3 max-md:bottom-44 max-md:w-auto rounded-md border border-line bg-surface shadow-xl"
+          className="ev-scroll absolute top-3 bottom-24 left-3 z-30 w-[300px] overflow-y-auto mobile:right-3 mobile:bottom-44 mobile:w-auto rounded-md border border-line bg-surface shadow-xl"
         >
           <div className="sticky top-0 border-b border-line bg-surface px-4 py-3 text-sm font-medium text-fg">Passo a passo</div>
           <ol>
@@ -164,7 +164,7 @@ export function NavigationOverlay() {
       )}
 
       {/* Trip summary and controls */}
-      <div className="absolute inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex justify-center px-3 md:px-4">
+      <div className="absolute inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex justify-center px-3 desktop:px-4">
         <div data-testid="nav-bar" className="flex w-full max-w-3xl flex-wrap items-center gap-x-6 gap-y-2 rounded-md border border-line bg-surface px-4 py-3 shadow-xl">
           <div className="flex items-baseline gap-5">
             <div>

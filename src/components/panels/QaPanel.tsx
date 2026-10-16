@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useDialog } from '../../hooks/useDialog';
 import { VEHICLE_BY_ID } from '../../data/salvadorStations';
 import { runSelfTests } from '../../lib/qaSelfTest';
 import { exportReport } from '../../lib/report';
@@ -27,6 +28,9 @@ export function QaPanel() {
   const setViewMode = useAppStore((s) => s.setViewMode);
   const [running, setRunning] = useState(false);
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]>('all');
+
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialog(dialogRef, () => setOpen(false), open);
 
   if (!open) return null;
 
@@ -59,6 +63,8 @@ export function QaPanel() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" data-testid="qa-panel-overlay">
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="qa-panel-title"
@@ -93,8 +99,8 @@ export function QaPanel() {
           </div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
-          <section className="ev-scroll min-h-0 overflow-y-auto border-b border-line p-5 md:border-r md:border-b-0">
+        <div className="grid min-h-0 flex-1 grid-cols-1 desktop:grid-cols-2">
+          <section className="ev-scroll min-h-0 overflow-y-auto border-b border-line p-5 desktop:border-r desktop:border-b-0">
             <div className="mb-3 flex items-baseline justify-between">
               <h3 className="text-sm font-medium text-fg">Regras de negócio</h3>
               {selfTests && (
@@ -130,8 +136,8 @@ export function QaPanel() {
               </p>
             )}
             <p className="mt-5 text-xs leading-relaxed text-muted">
-              Para automação com Playwright, todos os controles têm <code>data-testid</code> e o estado fica em{' '}
-              <code>window.__voltStore</code>.
+              Para automação com Playwright, todos os controles têm <code>data-testid</code>. Em desenvolvimento ou em
+              builds de teste (<code>VITE_E2E=1</code>), o estado fica em <code>window.__voltStore</code>.
             </p>
           </section>
 

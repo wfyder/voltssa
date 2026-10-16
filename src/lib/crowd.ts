@@ -15,6 +15,8 @@ interface ReportCheck {
   userLocation: Coordinates | null;
   stationCoords: Coordinates;
   existingReports: CrowdReport[];
+  /** Official status now; leaving 'maintenance' also requires being on site. */
+  currentStatus?: StationStatus;
 }
 
 /**
@@ -23,7 +25,8 @@ interface ReportCheck {
  *  - The same reporter cannot vote twice for the same status while it is pending.
  */
 export function validateReport(check: ReportCheck): ReportVerdict {
-  const needsPresence = check.status === 'maintenance' || check.method === 'checkin';
+  const leavingMaintenance = check.currentStatus === 'maintenance' && check.status !== 'maintenance';
+  const needsPresence = check.status === 'maintenance' || check.method === 'checkin' || leavingMaintenance;
   const distanceM = check.userLocation ? distanceMeters(check.userLocation, check.stationCoords) : null;
 
   if (needsPresence) {
@@ -32,7 +35,9 @@ export function validateReport(check: ReportCheck): ReportVerdict {
         ok: false,
         code: 'NO_LOCATION',
         distanceM,
-        message: 'Defina sua localização no mapa antes de reportar um posto quebrado.',
+        message: leavingMaintenance
+          ? 'Defina sua localização no mapa antes de reportar que o posto voltou a funcionar.'
+          : 'Defina sua localização no mapa antes de reportar um posto quebrado.',
       };
     }
     if (distanceM > FRAUD_RADIUS_M) {
@@ -40,7 +45,9 @@ export function validateReport(check: ReportCheck): ReportVerdict {
         ok: false,
         code: 'GEO_FRAUD',
         distanceM,
-        message: `Você está a ${Math.round(distanceM)} m do posto. Reportes de quebra exigem presença física (< ${FRAUD_RADIUS_M} m).`,
+        message: `Você está a ${Math.round(distanceM)} m do posto. ${
+          leavingMaintenance ? 'Tirar um posto da manutenção' : 'Reportes de quebra'
+        } exigem presença física (< ${FRAUD_RADIUS_M} m).`,
       };
     }
   }

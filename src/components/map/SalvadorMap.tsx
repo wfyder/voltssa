@@ -69,6 +69,13 @@ export function SalvadorMap() {
   }, []);
 
   useEffect(() => {
+    const own = mapRef;
+    return () => {
+      if (mapHandle.current && mapHandle.current === own.current) mapHandle.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
     const map = mapRef.current?.getMap();
     if (!map || !map.isStyleLoaded()) return;
     if (nightMap) applyNightTheme(map);
@@ -107,7 +114,8 @@ export function SalvadorMap() {
         [minX, minY],
         [maxX, maxY],
       ],
-      { padding: viewPadding('route'), duration: 1400, pitch: 55 },
+      // absolutePadding: replace (not add to) the padding left in the transform by earlier camera moves.
+      { padding: viewPadding('route'), absolutePadding: true, duration: 1400, pitch: 55 },
     );
   }, [routeState, sidebarOpen]);
 
@@ -183,8 +191,8 @@ export function SalvadorMap() {
   }, [routeState, navigating]);
   const visibleIds = useMemo(() => new Set(visible.map((v) => v.station.id)), [visible]);
 
-  // 3D car: the moving vehicle while navigating, otherwise the driver's current position.
-  const carPosition = navigation?.position ?? userLocation;
+  // The 3D car only appears during turn-by-turn navigation; otherwise the position is a dot.
+  const carPosition = navigation?.position ?? null;
   const carHeading = navigation?.heading ?? 0;
   useEffect(() => {
     carPoseRef.current = carPosition ? { position: carPosition, heading: carHeading } : null;
@@ -200,6 +208,10 @@ export function SalvadorMap() {
         maxPitch={78}
         onLoad={onLoad}
         onClick={onMapClick}
+        // Panning by hand during navigation stops the camera from following the car.
+        onDragStart={(e) => {
+          if (e.originalEvent && useAppStore.getState().navigation) useAppStore.getState().setNavFollow(false);
+        }}
         cursor={pickingLocation || stationForm.picking ? 'crosshair' : 'grab'}
         style={{ width: '100%', height: '100%' }}
         attributionControl={{ compact: true }}
@@ -346,7 +358,10 @@ export function SalvadorMap() {
         )}
         {userLocation && !navigating && (
           <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
-            <span data-testid="user-location-marker" className="block h-px w-px" />
+            <div data-testid="user-location-marker" className="relative flex h-6 w-6 items-center justify-center">
+              <span className="absolute h-6 w-6 rounded-full bg-accent/25" />
+              <span className="relative h-3.5 w-3.5 rounded-full border-2 border-base bg-accent shadow" />
+            </div>
           </Marker>
         )}
       </Map>

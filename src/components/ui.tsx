@@ -181,6 +181,7 @@ export function Button({
   variant = 'primary',
   className,
   title,
+  autoFocusInDialog,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -189,11 +190,14 @@ export function Button({
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   className?: string;
   title?: string;
+  /** Receives focus when its dialog opens. */
+  autoFocusInDialog?: boolean;
 }) {
   return (
     <button
       type="button"
       data-testid={testId}
+      data-autofocus={autoFocusInDialog || undefined}
       onClick={onClick}
       disabled={disabled}
       title={title}

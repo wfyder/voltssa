@@ -24,7 +24,7 @@ export function SmartCityPanel() {
   const toggleOcpp = useAppStore((s) => s.toggleOcpp);
   const togglePowerSplit = useAppStore((s) => s.togglePowerSplit);
   const selectStation = useAppStore((s) => s.selectStation);
-  const [splitStationId, setSplitStationId] = useState(stations.filter(isPublicDc)[0].id);
+  const [splitStationId, setSplitStationId] = useState(() => stations.find(isPublicDc)?.id ?? '');
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(isMobile);
 
@@ -42,9 +42,10 @@ export function SmartCityPanel() {
     return { total, corridor, capacityKw, dcFast, openNow, free, avgReliability, offline, broken, deserts };
   }, [stations, runtime, simHour]);
 
-  const splitStation = STATION_BY_ID[splitStationId] ?? dcStations[0];
-  const splitKw = splitStation.connectors.find((c) => isDc(c.type))!.powerKw;
-  const splitActive = runtime[splitStation.id].powerSplit;
+  // Resolve from the DC list: an edited station may no longer have a DC connector.
+  const splitStation = dcStations.find((s) => s.id === splitStationId) ?? dcStations[0] ?? null;
+  const splitKw = splitStation?.connectors.find((c) => isDc(c.type))?.powerKw ?? 0;
+  const splitActive = splitStation ? runtime[splitStation.id]?.powerSplit ?? false : false;
   const offlineStations = stations.filter((s) => !runtime[s.id].ocppOnline);
 
   const onExport = (format: 'md' | 'json') => {
@@ -66,7 +67,7 @@ export function SmartCityPanel() {
     <aside
       data-testid="smartcity-panel"
       style={isMobile ? undefined : { right: selectedStationId ? 412 : 12 }}
-      className="ev-scroll absolute top-3 bottom-16 z-20 w-[340px] max-w-[calc(100%-1.5rem)] overflow-y-auto rounded-md border border-line bg-surface px-4 py-4 shadow-sm transition-[right] duration-300 max-md:fixed max-md:inset-x-0 max-md:top-auto max-md:bottom-0 max-md:z-[25] max-md:max-h-[70dvh] max-md:w-full max-md:max-w-none max-md:rounded-b-none max-md:pb-[max(1rem,env(safe-area-inset-bottom))]"
+      className="ev-scroll absolute top-3 bottom-16 z-20 w-[340px] max-w-[calc(100%-1.5rem)] overflow-y-auto rounded-md border border-line bg-surface px-4 py-4 shadow-sm transition-[right] duration-300 mobile:fixed mobile:inset-x-0 mobile:top-auto mobile:bottom-0 mobile:z-[25] mobile:max-h-[70dvh] mobile:w-full mobile:max-w-none mobile:rounded-b-none mobile:pb-[max(1rem,env(safe-area-inset-bottom))]"
     >
       <header className="mb-4 flex items-start justify-between gap-2">
         <div>
@@ -175,7 +176,7 @@ export function SmartCityPanel() {
                 <div className="mb-1 text-fg-2">Dois carros no mesmo carregador DC</div>
                 <Select
                   testId="select-power-split-station"
-                  value={splitStation.id}
+                  value={splitStation?.id ?? ''}
                   onChange={setSplitStationId}
                   className="w-full text-xs"
                 >
@@ -198,7 +199,8 @@ export function SmartCityPanel() {
                 <Button
                   testId="btn-chaos-power-split"
                   variant="secondary"
-                  onClick={() => togglePowerSplit(splitStation.id)}
+                  onClick={() => splitStation && togglePowerSplit(splitStation.id)}
+                  disabled={!splitStation}
                   className="mt-2 w-full text-xs"
                 >
                   {splitActive ? 'Desconectar segundo carro' : 'Conectar segundo carro'}

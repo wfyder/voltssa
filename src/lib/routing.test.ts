@@ -17,9 +17,15 @@ describe('route alternatives', () => {
     expect(distanceMeters(left, right)).toBeGreaterThan(4500);
   });
 
-  it('removes the arrive/depart pair added by a via point', () => {
-    const steps = [step('depart'), step('turn'), step('arrive'), step('depart'), step('turn'), step('arrive')];
-    expect(stripViaSteps(steps).map((s) => s.maneuver.type)).toEqual(['depart', 'turn', 'turn', 'arrive']);
+  it('drops the via arrive and turns the via depart into a continue that keeps its distance', () => {
+    // OSRM "arrive" steps always have zero length.
+    const arrive = { ...step('arrive'), distance: 0 };
+    const steps = [step('depart'), step('turn'), arrive, { ...step('depart'), distance: 1000 }, step('turn'), arrive];
+    const out = stripViaSteps(steps);
+    expect(out.map((s) => s.maneuver.type)).toEqual(['depart', 'turn', 'continue', 'turn', 'arrive']);
+    // Total distance is preserved, so maneuvers after the via point stay where they are.
+    const total = (list: OsrmStep[]) => list.reduce((sum, s) => sum + s.distance, 0);
+    expect(total(out)).toBe(total(steps));
   });
 
   it('drops duplicates and long detours, keeping the main route first', () => {

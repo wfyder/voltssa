@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+import { useDialog } from '../../hooks/useDialog';
 import { STATION_BY_ID } from '../../data/salvadorStations';
 import { FRAUD_RADIUS_M } from '../../lib/geo';
 import { formatDistance } from '../../lib/utils';
@@ -8,13 +10,19 @@ export function FraudAlertModal() {
   const alert = useAppStore((s) => s.fraudAlert);
   const dismiss = useAppStore((s) => s.dismissFraudAlert);
   const simulatePresenceAt = useAppStore((s) => s.simulatePresenceAt);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialog(dialogRef, dismiss, alert !== null);
+
   if (!alert) return null;
   const station = STATION_BY_ID[alert.stationId];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="alertdialog"
+        aria-describedby="fraud-alert-message"
         aria-modal="true"
         aria-labelledby="fraud-title"
         data-testid="fraud-alert-modal"
@@ -23,7 +31,7 @@ export function FraudAlertModal() {
         <h2 id="fraud-title" className="text-base font-semibold text-fg">
           Fraude de Geolocalização Detectada
         </h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted" data-testid="fraud-alert-message">
+        <p id="fraud-alert-message" className="mt-2 text-sm leading-relaxed text-muted" data-testid="fraud-alert-message">
           {alert.message}
         </p>
         <dl className="mt-4 space-y-1 text-sm">
@@ -54,7 +62,7 @@ export function FraudAlertModal() {
           >
             Simular presença
           </Button>
-          <Button testId="btn-fraud-dismiss" onClick={dismiss}>
+          <Button testId="btn-fraud-dismiss" onClick={dismiss} autoFocusInDialog>
             Entendi
           </Button>
         </div>

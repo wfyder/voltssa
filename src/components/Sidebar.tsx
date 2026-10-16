@@ -227,7 +227,7 @@ function MobileStationSheet() {
       data-testid="mobile-station-sheet"
       data-snap={snap}
       style={{ height: `calc(${SNAP_HEIGHT[snap]} + env(safe-area-inset-bottom))` }}
-      className="fixed inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden rounded-t-xl border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgba(0,0,0,0.35)] transition-[height] duration-300"
+      className="fixed inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden rounded-t-xl border-t border-line bg-surface pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] shadow-[0_-8px_24px_rgba(0,0,0,0.35)] transition-[height] duration-300"
     >
       <button
         type="button"

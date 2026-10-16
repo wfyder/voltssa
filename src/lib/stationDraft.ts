@@ -237,27 +237,139 @@ export function draftFromStation(s: Station): StationDraft {
 /*  Local persistence (per browser)                                           */
 /* -------------------------------------------------------------------------- */
 
-const isStation = (v: unknown): v is Station => {
-  const s = v as Station;
-  return (
-    !!s &&
-    typeof s.id === 'string' &&
-    typeof s.name === 'string' &&
-    typeof s.coords?.lat === 'number' &&
-    typeof s.coords?.lng === 'number' &&
-    Array.isArray(s.connectors) &&
-    s.connectors.length > 0
-  );
-};
+/** Ids of user stations; anything else in storage is rejected (no overriding curated ids). */
+export const USER_STATION_ID = /^user-[a-z0-9-]{1,80}$/;
+const BACKUP_KEY = `${STORAGE_KEY}.corrupt`;
+const MAX_STORED = 200;
 
-export function loadUserStations(): Station[] {
+const PLUG_TYPES: PlugType[] = ['TYPE2_AC', 'CCS2_DC', 'CHADEMO_DC'];
+const CATEGORIES: StationCategory[] = ['shopping', 'fuel_dc', 'supermarket', 'business'];
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const cleanText = (v: unknown, max: number): string | null =>
+  typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, max) : null;
+const finite = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/**
+ * Rebuilds a draft from an untrusted stored value, field by field. Returns null when any
+ * field has the wrong type — the caller then runs the same QA rules as the form.
+ */
+export function draftFromStored(v: unknown): { id: string; createdAt?: number; draft: StationDraft } | null {
+  if (!isRecord(v)) return null;
+  const id = cleanText(v.id, 120);
+  const name = cleanText(v.name, 120);
+  const neighborhood = cleanText(v.neighborhood, 80);
+  if (!id || !USER_STATION_ID.test(id) || name === null || neighborhood === null) return null;
+  const category = CATEGORIES.find((c) => c === v.category);
+  if (!category) return null;
+
+  if (!isRecord(v.coords)) return null;
+  const lat = finite(v.coords.lat);
+  const lng = finite(v.coords.lng);
+  if (lat === null || lng === null) return null;
+
+  if (!Array.isArray(v.connectors) || v.connectors.length === 0 || v.connectors.length > 8) return null;
+  const connectors: ConnectorDraft[] = [];
+  for (const c of v.connectors) {
+    if (!isRecord(c) || !isRecord(c.tariff) || c.tariff.kind !== 'flat') return null;
+    const type = PLUG_TYPES.find((t) => t === c.type);
+    const powerKw = finite(c.powerKw);
+    const pricePerKwh = finite(c.tariff.pricePerKwh);
+    if (!type || powerKw === null || pricePerKwh === null) return null;
+    connectors.push({ type, powerKw, pricePerKwh });
+  }
+
+  const slots = finite(v.slots);
+  if (slots === null) return null;
+
+  let is24h = false;
+  let open = 8;
+  let close = 22;
+  if (v.hours === null) is24h = true;
+  else if (isRecord(v.hours) && finite(v.hours.open) !== null && finite(v.hours.close) !== null) {
+    open = v.hours.open as number;
+    close = v.hours.close as number;
+  } else return null;
+
+  let parking: Pick<StationDraft, 'parkingKind' | 'parkingPrice' | 'parkingExtraPerHour'> = {
+    parkingKind: 'unknown',
+    parkingPrice: 0,
+    parkingExtraPerHour: 0,
+  };
+  const pk = isRecord(v.parking) ? v.parking : null;
+  if (!pk) return null;
+  if (pk.kind === 'free') parking = { ...parking, parkingKind: 'free' };
+  else if (pk.kind === 'flat' && finite(pk.price) !== null) parking = { ...parking, parkingKind: 'flat', parkingPrice: pk.price as number };
+  else if (pk.kind === 'block' && finite(pk.price) !== null && finite(pk.extraPerHour) !== null)
+    parking = { parkingKind: 'hourly', parkingPrice: pk.price as number, parkingExtraPerHour: pk.extraPerHour as number };
+  else if (pk.kind !== 'unknown') return null;
+
+  const address = cleanText(v.address, 160) ?? '';
+  const draft: StationDraft = {
+    name,
+    neighborhood,
+    address: address === 'Endereço não informado' ? '' : address,
+    category,
+    coords: { lat, lng },
+    connectors,
+    slots,
+    is24h,
+    open,
+    close,
+    ...parking,
+    unlockFee: finite(v.unlockFee) ?? 0,
+    notes: cleanText(v.notes, 500) ?? '',
+  };
+  return { id, createdAt: finite(v.createdAt) ?? undefined, draft };
+}
+
+export interface StoredStations {
+  stations: Station[];
+  /** Entries that failed parsing or the QA rules (kept in a backup key, never silently lost). */
+  discarded: number;
+}
+
+/**
+ * Parses the persisted list. Every entry is rebuilt and must pass `validateDraft` against the
+ * curated survey and the entries accepted before it — the same rules as the add/edit form.
+ */
+export function parseStoredStations(raw: string | null, curated: Station[]): StoredStations {
+  if (!raw) return { stations: [], discarded: 0 };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { stations: [], discarded: 1 };
+  }
+  if (!Array.isArray(parsed)) return { stations: [], discarded: 1 };
+
+  const curatedIds = new Set(curated.map((c) => c.id));
+  const accepted: Station[] = [];
+  let discarded = Math.max(0, parsed.length - MAX_STORED);
+  for (const entry of parsed.slice(0, MAX_STORED)) {
+    const rebuilt = draftFromStored(entry);
+    if (!rebuilt || curatedIds.has(rebuilt.id) || accepted.some((s) => s.id === rebuilt.id)) {
+      discarded++;
+      continue;
+    }
+    if (!validateDraft(rebuilt.draft, [...curated, ...accepted], rebuilt.id).ok) {
+      discarded++;
+      continue;
+    }
+    accepted.push(stationFromDraft(rebuilt.draft, rebuilt.id, curated.length + accepted.length + 1, rebuilt.createdAt));
+  }
+  return { stations: accepted, discarded };
+}
+
+export function loadUserStations(curated: Station[]): StoredStations {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter(isStation).map((s) => ({ ...s, source: 'user' as const })) : [];
+    const result = parseStoredStations(raw, curated);
+    // Keep the original blob before any later save rewrites the key.
+    if (result.discarded > 0 && raw) localStorage.setItem(BACKUP_KEY, raw);
+    return result;
   } catch {
-    return [];
+    return { stations: [], discarded: 0 };
   }
 }
 
@@ -266,5 +378,15 @@ export function saveUserStations(stations: Station[]): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stations.filter((s) => s.source === 'user')));
   } catch {
     /* storage unavailable (private mode) — stations live for this session only */
+  }
+}
+
+export function clearUserStations(): void {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) localStorage.setItem(BACKUP_KEY, raw);
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* storage unavailable */
   }
 }

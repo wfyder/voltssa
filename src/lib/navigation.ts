@@ -201,7 +201,8 @@ export function computeProgress(
     remainingKm,
     remainingMin: totalDurationMin * (1 - progress),
     progress,
-    arrived: toDestinationM <= ARRIVAL_M || remainingKm * 1000 <= ARRIVAL_M,
+    // Reaching the end of the line only counts when the car is actually on the route.
+    arrived: toDestinationM <= ARRIVAL_M || (remainingKm * 1000 <= ARRIVAL_M && offRouteM <= OFF_ROUTE_M),
   };
 }
 
@@ -222,4 +223,25 @@ export function spokenDistance(meters: number): string {
   if (meters >= 1000) return `${(meters / 1000).toFixed(1).replace('.', ',')} km`;
   if (meters >= 100) return `${Math.round(meters / 50) * 50} m`;
   return `${Math.max(10, Math.round(meters / 10) * 10)} m`;
+}
+
+/** First finite heading among the candidates, normalised to 0–360° (GPS reports NaN when still). */
+export function safeHeading(...candidates: (number | null | undefined)[]): number {
+  for (const h of candidates) {
+    if (typeof h === 'number' && Number.isFinite(h)) return ((h % 360) + 360) % 360;
+  }
+  return 0;
+}
+
+/** Bearing from `a` to `b` in degrees, corrected for longitude shrinking with latitude. */
+export function headingBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const dLng = (b.lng - a.lng) * Math.cos((a.lat * Math.PI) / 180);
+  return ((Math.atan2(dLng, b.lat - a.lat) * 180) / Math.PI + 360) % 360;
+}
+
+export const REROUTE_BASE_COOLDOWN_MS = 8000;
+
+/** Wait between reroutes: 8 s, doubling after each failed attempt (max 64 s). */
+export function rerouteCooldownMs(consecutiveFailures: number): number {
+  return REROUTE_BASE_COOLDOWN_MS * 2 ** Math.min(Math.max(consecutiveFailures, 0), 3);
 }

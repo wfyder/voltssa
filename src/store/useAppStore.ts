@@ -11,11 +11,11 @@ import { isCompatible, isRestricted } from '../lib/compatibility';
 import { resolveOfficialStatus, validateReport } from '../lib/crowd';
 import { offsetCoords } from '../lib/geo';
 import { getCurrentFix, LocateError, LOCATE_MESSAGE, salvadorProximity } from '../lib/geolocation';
-import { computeProgress, pointAlong } from '../lib/navigation';
+import { computeProgress, headingBetween, pointAlong, safeHeading } from '../lib/navigation';
 import { isOpenAt } from '../lib/hours';
 import { ReservationEngine } from '../lib/reservationEngine';
 import type { SelfTestResult } from '../lib/qaSelfTest';
-import { buildSmartRoute, withOption, type SmartRoute } from '../lib/routing';
+import { buildSmartRoute, replanForVehicle, withOption, type SmartRoute } from '../lib/routing';
 import {
   loadUserStations,
   newStationId,
@@ -205,7 +205,8 @@ interface AppState {
   updateGpsPosition: (coords: Coordinates, heading: number | null) => void;
   setGpsError: (message: string | null) => void;
   simulateDetour: () => void;
-  reroute: () => Promise<void>;
+  /** Resolves true when a street route (OSRM) replaced the old one. */
+  reroute: () => Promise<boolean>;
   markArrived: () => void;
 }
 
@@ -240,9 +241,9 @@ function seedRuntime(station: Station): StationRuntime {
   };
 }
 
-// Stations added by the user in earlier sessions (localStorage).
-const initialUserStations = loadUserStations();
-initialUserStations.forEach(registerStation);
+// Stations added by the user in earlier sessions (localStorage), re-validated on load.
+const storedStations = loadUserStations(SALVADOR_STATIONS);
+const initialUserStations = storedStations.stations.filter(registerStation);
 
 const initialRuntime = (): Record<string, StationRuntime> =>
   Object.fromEntries([...SALVADOR_STATIONS, ...initialUserStations].map((s) => [s.id, seedRuntime(s)]));
@@ -291,6 +292,10 @@ export function estimatedWaitMin(rt: StationRuntime, slots: number, position: nu
 
 const engines = new Map<string, ReservationEngine>();
 let routeAbort: AbortController | null = null;
+/** Each locateMe call gets a number; only the latest one may apply its result. */
+let locateSeq = 0;
+/** Bumped whenever the driver sets the position by hand, so a late GPS fix won't override it. */
+let manualLocationVersion = 0;
 
 export const useAppStore = create<AppState>()((set, get) => {
   const patchRuntime = (stationId: string, patch: (rt: StationRuntime) => StationRuntime) =>
@@ -333,7 +338,18 @@ export const useAppStore = create<AppState>()((set, get) => {
     userLocation: null,
     pickingLocation: false,
     routeState: { status: 'idle' },
-    qaLog: [],
+    qaLog:
+      storedStations.discarded > 0
+        ? [
+            {
+              id: uid('qa'),
+              at: Date.now(),
+              category: 'rule',
+              severity: 'warn',
+              message: `${storedStations.discarded} posto(s) salvos no navegador foram ignorados por dados inválidos (cópia guardada em backup).`,
+            },
+          ]
+        : [],
     fraudAlert: null,
     qaPanelOpen: false,
     locationSource: null,
@@ -348,9 +364,13 @@ export const useAppStore = create<AppState>()((set, get) => {
     setSelfTests: (results) => set({ selfTests: results }),
     setVehicle: (id) => {
       set({ vehicleId: id });
+      replanActiveRoute();
       get().logQa('rule', 'info', `Veículo alterado para ${VEHICLE_BY_ID[id].name}`);
     },
-    setBattery: (pct) => set({ batteryPct: clamp(Math.round(pct), 5, 100) }),
+    setBattery: (pct) => {
+      set({ batteryPct: clamp(Math.round(pct), 5, 100) });
+      replanActiveRoute();
+    },
     setSimHour: (hour) => set({ simHour: clamp(Math.round(hour), 0, 23) }),
     setViewMode: (mode) => set({ viewMode: mode }),
     toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
@@ -361,6 +381,7 @@ export const useAppStore = create<AppState>()((set, get) => {
     setDrawerTab: (tab) => set({ drawerTab: tab }),
     setPickingLocation: (value) => set({ pickingLocation: value }),
     setUserLocation: (coords, source = 'manual', accuracyM = null) => {
+      if (source === 'manual') manualLocationVersion++;
       set({
         userLocation: coords,
         pickingLocation: false,
@@ -372,9 +393,16 @@ export const useAppStore = create<AppState>()((set, get) => {
     },
 
     locateMe: async () => {
+      const seq = ++locateSeq;
+      const manualAtStart = manualLocationVersion;
       set({ locationStatus: 'locating', locationNotice: null, pickingLocation: false });
       try {
         const fix = await getCurrentFix();
+        // A newer request, a position set by hand, or a running trip makes this fix stale.
+        if (seq !== locateSeq || manualAtStart !== manualLocationVersion || get().navigation) {
+          if (seq === locateSeq) set({ locationStatus: 'idle' });
+          return false;
+        }
         get().setUserLocation(fix.coords, 'gps', fix.accuracyM);
         const { proximity, distanceKm } = salvadorProximity(fix.coords);
         set({
@@ -387,6 +415,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         get().logQa('route', 'info', `Localização obtida pelo GPS (precisão de ${Math.round(fix.accuracyM)} m, ${proximity})`);
         return true;
       } catch (err) {
+        if (seq !== locateSeq) return false;
         const message = err instanceof LocateError ? err.message : LOCATE_MESSAGE.unavailable;
         set({ locationStatus: 'error', locationNotice: message });
         get().logQa('route', 'warn', `Falha ao obter localização: ${message}`);
@@ -439,6 +468,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         userLocation: get().userLocation,
         stationCoords: station.coords,
         existingReports: rt.reports,
+        currentStatus: rt.status,
       });
 
       if (!verdict.ok) {
@@ -482,6 +512,7 @@ export const useAppStore = create<AppState>()((set, get) => {
         userLocation: reporterLocation,
         stationCoords: station.coords,
         existingReports: get().runtime[stationId].reports,
+        currentStatus: get().runtime[stationId].status,
       });
       if (!verdict.ok) return;
       applyReport(stationId, {
@@ -731,9 +762,16 @@ export const useAppStore = create<AppState>()((set, get) => {
       const nav = get().navigation;
       if (!nav) return;
       const position = nav.arrived ? offsetCoords(STATION_BY_ID[nav.stationId].coords, 15, 200) : nav.position;
-      set({ navigation: null, sidebarOpen: true });
-      // Leave the driver where the trip ended, so on-site actions (check-in, reports) work.
-      get().setUserLocation(position, nav.mode === 'gps' ? 'gps' : 'manual');
+      // Leave the driver where the trip ended (on-site actions work) and keep the route on screen.
+      if (nav.mode !== 'gps') manualLocationVersion++;
+      set({
+        navigation: null,
+        sidebarOpen: true,
+        userLocation: position,
+        locationSource: nav.mode === 'gps' ? 'gps' : 'manual',
+        locationAccuracyM: null,
+        pickingLocation: false,
+      });
       get().selectStation(nav.stationId, openTab);
     },
 
@@ -754,17 +792,16 @@ export const useAppStore = create<AppState>()((set, get) => {
       const position = nav.simOffset
         ? { lat: coords.lat + nav.simOffset.lat, lng: coords.lng + nav.simOffset.lng }
         : coords;
-      set({ navigation: { ...nav, simKm, position, heading } });
+      set({ navigation: { ...nav, simKm, position, heading: safeHeading(heading, nav.heading) } });
     },
 
     updateGpsPosition: (coords, heading) => {
       const nav = get().navigation;
-      if (!nav || nav.mode !== 'gps') return;
+      if (!nav || nav.mode !== 'gps' || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return;
       const moved = Math.abs(coords.lat - nav.position.lat) + Math.abs(coords.lng - nav.position.lng) > 1e-6;
-      const derived = moved
-        ? (Math.atan2(coords.lng - nav.position.lng, coords.lat - nav.position.lat) * 180) / Math.PI
-        : nav.heading;
-      set({ navigation: { ...nav, position: coords, heading: heading ?? derived, gpsError: null } });
+      const derived = moved ? headingBetween(nav.position, coords) : null;
+      // Browsers report heading NaN/null when the car is still: keep the last good value.
+      set({ navigation: { ...nav, position: coords, heading: safeHeading(heading, derived, nav.heading), gpsError: null } });
     },
 
     simulateDetour: () => {
@@ -784,17 +821,21 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     reroute: async () => {
       const { navigation: nav, routeState, vehicleId } = get();
-      if (!nav || nav.rerouting || routeState.status !== 'ready') return;
+      if (!nav || nav.rerouting || routeState.status !== 'ready') return false;
       const station = STATION_BY_ID[nav.stationId];
+      routeAbort?.abort();
+      const controller = new AbortController();
+      routeAbort = controller;
       const { route: current } = routeState;
       const progress = computeProgress(current.geometry, current.steps, current.durationMin, nav.position);
       const vehicle = VEHICLE_BY_ID[vehicleId];
       const batteryNow = nav.routeStartBatteryPct - ((current.energy.realKwh * progress.progress) / vehicle.batteryKwh) * 100;
       set({ navigation: { ...nav, rerouting: true } });
       try {
-        const route = await buildSmartRoute(nav.position, station.coords, vehicle, Math.max(0, batteryNow), undefined, station.name);
+        const route = await buildSmartRoute(nav.position, station.coords, vehicle, Math.max(0, batteryNow), controller.signal, station.name);
         const latest = get().navigation;
-        if (!latest) return;
+        // Cancelled (trip ended or a new route started) or now navigating somewhere else.
+        if (controller.signal.aborted || !latest || latest.stationId !== nav.stationId) return false;
         const start = pointAlong(route.geometry, 0);
         const simulated = latest.mode === 'simulated';
         set({
@@ -810,10 +851,22 @@ export const useAppStore = create<AppState>()((set, get) => {
             reroutes: latest.reroutes + 1,
           },
         });
-        get().logQa('route', 'pass', `Rota recalculada após desvio (${route.distanceKm.toFixed(1)} km restantes)`, nav.stationId);
+        const viaStreets = route.routingSource === 'osrm';
+        get().logQa(
+          'route',
+          viaStreets ? 'pass' : 'warn',
+          viaStreets
+            ? `Rota recalculada após desvio (${route.distanceKm.toFixed(1)} km restantes)`
+            : 'Recálculo sem serviço de rotas: seguindo em linha reta até o posto',
+          nav.stationId,
+        );
+        return viaStreets;
       } catch (err) {
         set((s) => (s.navigation ? { navigation: { ...s.navigation, rerouting: false } } : {}));
-        get().logQa('route', 'fail', `Falha ao recalcular rota: ${(err as Error).message}`, nav.stationId);
+        if (!controller.signal.aborted) get().logQa('route', 'fail', `Falha ao recalcular rota: ${(err as Error).message}`, nav.stationId);
+        return false;
+      } finally {
+        if (routeAbort === controller) routeAbort = null;
       }
     },
 
@@ -831,6 +884,13 @@ export const useAppStore = create<AppState>()((set, get) => {
       );
     },
   };
+
+  /** Recompute energy and choice of a planned route for the current vehicle/battery (no network). */
+  function replanActiveRoute() {
+    const { routeState, navigation, vehicleId, batteryPct } = get();
+    if (routeState.status !== 'ready' || navigation) return;
+    set({ routeState: { ...routeState, route: replanForVehicle(routeState.route, VEHICLE_BY_ID[vehicleId], batteryPct) } });
+  }
 
   function applyReport(stationId: string, report: CrowdReport) {
     const station = STATION_BY_ID[stationId];
@@ -872,7 +932,8 @@ export const useAppStore = create<AppState>()((set, get) => {
   }
 });
 
-if (typeof window !== 'undefined') {
-  // Exposed for Playwright E2E scripts (deterministic state setup).
+// Exposed for Playwright E2E scripts only in development or an explicit E2E build
+// (VITE_E2E=1): in production it would let any injected script read the GPS position.
+if (typeof window !== 'undefined' && (import.meta.env.DEV || import.meta.env.VITE_E2E === '1')) {
   (window as unknown as { __voltStore: typeof useAppStore }).__voltStore = useAppStore;
 }

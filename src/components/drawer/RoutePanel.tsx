@@ -28,9 +28,11 @@ export function RoutePanel({ station }: { station: Station }) {
   const error = mine && routeState.status === 'error' ? routeState.message : null;
   const open = isOpenAt(station.hours, simHour);
 
-  const availableKwh = (vehicle.batteryKwh * batteryPct) / 100;
-  const arrivalPct = route ? ((availableKwh - route.energy.realKwh) / vehicle.batteryKwh) * 100 : null;
-  const reachable = arrivalPct !== null && arrivalPct > 0;
+  // Same numbers (and the same 5% reserve) the planner used to choose the route; the route is
+  // re-planned in the store whenever the vehicle or the battery level changes.
+  const chosenEval = route ? route.evaluations[route.chosenIndex] : null;
+  const arrivalPct = chosenEval ? chosenEval.arrivalPct : null;
+  const reachable = chosenEval ? chosenEval.reachable : true;
 
   return (
     <div data-testid="route-panel">
@@ -59,6 +61,12 @@ export function RoutePanel({ station }: { station: Station }) {
               </Button>
             )}
           </div>
+        )}
+        {userLocation && (
+          <p className="mt-2 text-xs text-faint" data-testid="route-privacy-note">
+            Para calcular a rota, sua origem (arredondada para ~10 m) e o destino são enviados ao serviço público OSRM,
+            baseado no OpenStreetMap.
+          </p>
         )}
         {!open && (
           <div className="mt-3">

@@ -1,4 +1,5 @@
 import type { PaddingOptions } from 'maplibre-gl';
+import { MOBILE_QUERY } from '../../hooks/useMediaQuery';
 import { useAppStore } from '../../store/useAppStore';
 
 export type Layout = 'desktop' | 'mobile' | 'car-landscape' | 'car-portrait';
@@ -7,7 +8,7 @@ export function currentLayout(): Layout {
   const { carMode } = useAppStore.getState();
   const portrait = window.matchMedia('(orientation: portrait)').matches;
   if (carMode) return portrait ? 'car-portrait' : 'car-landscape';
-  return window.matchMedia('(max-width: 767px)').matches ? 'mobile' : 'desktop';
+  return window.matchMedia(MOBILE_QUERY).matches ? 'mobile' : 'desktop';
 }
 
 /** Width of the car-mode side panel; kept in sync with the CarMode layout. */

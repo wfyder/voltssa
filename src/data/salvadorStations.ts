@@ -749,12 +749,19 @@ export const SALVADOR_STATIONS: Station[] = SEEDS.map((seed, i) => ({
  * Live id → station registry. Starts with the curated survey and also holds the
  * stations users add in the app (kept in sync by the store).
  */
-export const STATION_BY_ID: Record<string, Station> = Object.fromEntries(
-  SALVADOR_STATIONS.map((s) => [s.id, s]),
+// Null prototype: ids such as "__proto__" or "constructor" are plain keys, never inherited.
+export const STATION_BY_ID: Record<string, Station> = Object.assign(
+  Object.create(null) as Record<string, Station>,
+  Object.fromEntries(SALVADOR_STATIONS.map((s) => [s.id, s])),
 );
 
-export function registerStation(station: Station): void {
+/** Adds or updates a user station. Curated stations can never be replaced. */
+export function registerStation(station: Station): boolean {
+  if (station.source !== 'user') return false;
+  const existing = STATION_BY_ID[station.id];
+  if (existing && existing.source !== 'user') return false;
   STATION_BY_ID[station.id] = station;
+  return true;
 }
 
 export function unregisterStation(id: string): void {

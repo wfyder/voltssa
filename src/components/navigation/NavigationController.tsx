@@ -1,13 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { useNavProgress } from '../../hooks/useNavProgress';
-import { OFF_ROUTE_M, spokenDistance } from '../../lib/navigation';
+import { OFF_ROUTE_M, rerouteCooldownMs, spokenDistance } from '../../lib/navigation';
 import { useAppStore } from '../../store/useAppStore';
 import { mapHandle } from '../map/mapSetup';
 import { viewPadding } from '../map/viewPadding';
 
 const TICK_MS = 250;
 const PRE_ANNOUNCE_M = 200;
-const REROUTE_COOLDOWN_MS = 8000;
 
 function speak(text: string) {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
@@ -28,6 +27,8 @@ export function NavigationController() {
   const navigation = useAppStore((s) => s.navigation);
   const progress = useNavProgress();
   const lastReroute = useRef(0);
+  /** Consecutive reroutes that did not return a street route (OSRM down / rate limited). */
+  const rerouteFailures = useRef(0);
   const lastSpokenStep = useRef<string | null>(null);
   const preAnnounced = useRef<string | null>(null);
 
@@ -61,18 +62,6 @@ export function NavigationController() {
     return () => navigator.geolocation.clearWatch(id);
   }, [active, mode]);
 
-  // Stop following when the user pans the map by hand.
-  useEffect(() => {
-    if (!active) return;
-    const map = mapHandle.current?.getMap();
-    if (!map) return;
-    const onDrag = () => useAppStore.getState().setNavFollow(false);
-    map.on('dragstart', onDrag);
-    return () => {
-      map.off('dragstart', onDrag);
-    };
-  }, [active]);
-
   // Camera follows the car, heading-up.
   useEffect(() => {
     if (!navigation?.follow || navigation.arrived) return;
@@ -95,11 +84,17 @@ export function NavigationController() {
       store.markArrived();
       return;
     }
-    if (progress.offRouteM > OFF_ROUTE_M && Date.now() - lastReroute.current > REROUTE_COOLDOWN_MS) {
-      lastReroute.current = Date.now();
-      if (navigation.voice) speak('Recalculando a rota.');
-      void store.reroute();
-    }
+    if (progress.offRouteM <= OFF_ROUTE_M) return;
+    // Back off after failures so a down or rate-limited OSRM is not hammered every 8 s.
+    if (Date.now() - lastReroute.current <= rerouteCooldownMs(rerouteFailures.current)) return;
+    lastReroute.current = Date.now();
+    const routeState = store.routeState;
+    // A straight-line fallback route is never "followed", so only announce real recalculations.
+    const onStreets = routeState.status === 'ready' && routeState.route.routingSource === 'osrm';
+    if (navigation.voice && onStreets) speak('Recalculando a rota.');
+    void store.reroute().then((viaStreets) => {
+      rerouteFailures.current = viaStreets ? 0 : rerouteFailures.current + 1;
+    });
   }, [navigation, progress]);
 
   // Voice guidance: announce each maneuver ~200 m ahead and again when it is close.
@@ -127,6 +122,7 @@ export function NavigationController() {
   // Silence any pending speech when navigation ends.
   useEffect(() => {
     if (active) return;
+    rerouteFailures.current = 0;
     lastSpokenStep.current = null;
     preAnnounced.current = null;
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();

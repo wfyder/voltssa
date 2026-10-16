@@ -38,12 +38,12 @@ export function Header() {
       className="relative z-30 border-b border-line bg-surface px-4 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5"
     >
       <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
-        <div className="mr-2 flex items-center gap-3 self-center max-md:w-full">
+        <div className="mr-2 flex items-center gap-3 self-center mobile:w-full">
           <div className="min-w-0 flex-1">
             <div className="text-[15px] font-semibold tracking-tight text-fg">VoltSSA</div>
             <div className="truncate text-[11px] text-muted">
-              <span className="max-md:hidden">Recarga de veículos elétricos em Salvador</span>
-              <span className="md:hidden tabular-nums">
+              <span className="mobile:hidden">Recarga de veículos elétricos em Salvador</span>
+              <span className="desktop:hidden tabular-nums">
                 {VEHICLE_BY_ID[vehicleId].name} · {batteryPct}% · ~{range.toFixed(0)} km · {formatHour(simHour)}
               </span>
             </div>
@@ -55,7 +55,7 @@ export function Header() {
             aria-label="Ajustes do veículo e do horário"
             onClick={() => setSettingsOpen((v) => !v)}
             className={cn(
-              'flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm md:hidden',
+              'flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm desktop:hidden',
               settingsOpen ? 'border-accent bg-accent text-accent-fg' : 'border-line-strong text-fg-2',
             )}
           >
@@ -66,7 +66,7 @@ export function Header() {
             data-testid="btn-car-mode-mobile"
             aria-label="Abrir modo carro"
             onClick={() => setCarMode(true)}
-            className="flex h-10 w-10 items-center justify-center rounded-md border border-line-strong text-fg-2 md:hidden"
+            className="flex h-10 w-10 items-center justify-center rounded-md border border-line-strong text-fg-2 desktop:hidden"
           >
             <Car className="h-4 w-4" />
           </button>
@@ -75,12 +75,12 @@ export function Header() {
         <div
           data-testid="header-settings"
           className={cn(
-            'gap-x-6 gap-y-3 max-md:w-full max-md:flex-col md:flex md:flex-wrap md:items-end',
+            'gap-x-6 gap-y-3 mobile:w-full mobile:flex-col desktop:flex desktop:flex-wrap desktop:items-end',
             settingsOpen ? 'flex' : 'hidden',
           )}
         >
           <Field label="Veículo">
-            <Select testId="select-vehicle" label="Selecionar veículo" value={vehicleId} onChange={setVehicle} className="max-md:w-full max-md:text-base">
+            <Select testId="select-vehicle" label="Selecionar veículo" value={vehicleId} onChange={setVehicle} className="mobile:w-full mobile:text-base">
               {VEHICLES.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.name} · {v.description}
@@ -91,7 +91,7 @@ export function Header() {
 
           <Field label="Bateria">
             <div className="flex h-[34px] items-center gap-2">
-              <div className="w-28 max-md:flex-1">
+              <div className="w-28 mobile:flex-1">
                 <RangeInput testId="slider-battery" label="Nível de bateria atual" min={5} max={100} value={batteryPct} onChange={setBattery} />
               </div>
               <span data-testid="battery-value" className={cn('w-9 text-sm tabular-nums', batteryPct <= 15 ? 'text-red-400' : 'text-fg')}>
@@ -105,7 +105,7 @@ export function Header() {
 
           <Field label="Hora simulada">
             <div className="flex h-[34px] items-center gap-2">
-              <div className="w-28 max-md:flex-1">
+              <div className="w-28 mobile:flex-1">
                 <RangeInput testId="slider-sim-hour" label="Hora simulada do sistema" min={0} max={23} value={simHour} onChange={setSimHour} />
               </div>
               <span data-testid="sim-hour-value" className="w-11 text-sm text-fg tabular-nums">
@@ -119,8 +119,8 @@ export function Header() {
             </div>
           </Field>
 
-          <div className="flex items-center gap-2 md:ml-auto md:self-center">
-            <div role="tablist" aria-label="Modo de visualização" className="flex rounded-md border border-line-strong p-0.5 max-md:flex-1">
+          <div className="flex items-center gap-2 desktop:ml-auto desktop:self-center">
+            <div role="tablist" aria-label="Modo de visualização" className="flex rounded-md border border-line-strong p-0.5 mobile:flex-1">
               {(
                 [
                   ['driver', 'toggle-view-driver', 'Motorista'],
@@ -138,7 +138,7 @@ export function Header() {
                     setSettingsOpen(false);
                   }}
                   className={cn(
-                    'rounded px-3 py-1 text-sm transition-colors max-md:flex-1 max-md:py-2',
+                    'rounded px-3 py-1 text-sm transition-colors mobile:flex-1 mobile:py-2',
                     viewMode === mode ? 'bg-accent text-accent-fg' : 'text-muted hover:text-fg',
                   )}
                 >
@@ -150,7 +150,7 @@ export function Header() {
               type="button"
               data-testid="btn-car-mode"
               onClick={() => setCarMode(true)}
-              className="flex items-center gap-1.5 rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-2 hover:bg-surface-2 max-md:hidden"
+              className="flex items-center gap-1.5 rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-2 hover:bg-surface-2 mobile:hidden"
             >
               <Car className="h-4 w-4" /> Modo carro
             </button>
@@ -161,10 +161,10 @@ export function Header() {
                 setQaPanelOpen(true);
                 setSettingsOpen(false);
               }}
-              className="rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-2 hover:bg-surface-2 max-md:py-2"
+              className="rounded-md border border-line-strong px-3 py-1.5 text-sm text-fg-2 hover:bg-surface-2 mobile:py-2"
             >
               QA
-              <span className="max-md:hidden"> e testes</span>
+              <span className="mobile:hidden"> e testes</span>
               {qaCount > 0 && <span className="ml-1.5 text-muted tabular-nums">{qaCount}</span>}
             </button>
           </div>

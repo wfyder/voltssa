@@ -1,5 +1,6 @@
 import { Plus, Trash2, X } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useDialog } from '../../hooks/useDialog';
 import { CATEGORY_LABEL, STATION_BY_ID } from '../../data/salvadorStations';
 import { PLUG_LABEL } from '../../lib/compatibility';
 import { draftFromStation, EMPTY_DRAFT, validateDraft, type DraftField, type StationDraft } from '../../lib/stationDraft';
@@ -72,6 +73,10 @@ export function StationFormModal() {
   const validation = validateDraft(full, stations, form.editingId);
   const error = (f: DraftField) => (submitted ? validation.errors[f] : undefined);
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Hidden while the user picks a point on the map: no focus trap then.
+  useDialog(dialogRef, closeStationForm, form.open && !form.picking);
+
   if (!form.open) return null;
 
   const set = <K extends keyof StationDraft>(key: K, value: StationDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
@@ -90,6 +95,8 @@ export function StationFormModal() {
       className={cn('fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4', form.picking && 'hidden')}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="station-form-title"
@@ -117,6 +124,7 @@ export function StationFormModal() {
               <Field label="Nome do local" error={error('name')}>
                 <input
                   data-testid="input-station-name"
+                  data-autofocus
                   value={draft.name}
                   onChange={(e) => set('name', e.target.value)}
                   placeholder="Ex.: Posto Shell Av. Paralela"
