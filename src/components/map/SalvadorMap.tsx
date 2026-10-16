@@ -1,5 +1,5 @@
 import * as turf from '@turf/turf';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, {
   Layer,
   Marker,
@@ -20,6 +20,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { applyNightTheme, MAP_STYLE_URL, mapHandle, removeNightTheme, setupTerrainAndBuildings } from './mapSetup';
 import { StationMarker } from './StationMarker';
 import { CameraControls } from './CameraControls';
+import { buildCarModel, carLengthForZoom } from '../../lib/car3d';
 import { viewPadding } from './viewPadding';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { salvadorProximity } from '../../lib/geolocation';
@@ -28,6 +29,8 @@ const ACCENT = '#facc15';
 
 export function SalvadorMap() {
   const mapRef = useRef<MapRef | null>(null);
+  // Quantised zoom: the 3D car is rebuilt so it keeps a constant on-screen size.
+  const [zoom, setZoom] = useState(INITIAL_VIEW.zoom);
   const { all, visible } = useStationViews();
 
   const viewMode = useAppStore((s) => s.viewMode);
@@ -170,7 +173,22 @@ export function SalvadorMap() {
       remaining: at < total - 0.001 ? turf.lineSliceAlong(routeFeature, at, total, { units: 'kilometers' }) : null,
     };
   }, [routeFeature, navigating, alongKm]);
+  // Alternatives the planner did not pick, drawn faintly under the chosen route.
+  const alternatives = useMemo(() => {
+    if (routeState.status !== 'ready' || navigating) return null;
+    const { options, chosenIndex } = routeState.route;
+    const others = options.filter((_, i) => i !== chosenIndex).map((o) => o.geometry);
+    return others.length ? turf.featureCollection(others) : null;
+  }, [routeState, navigating]);
   const visibleIds = useMemo(() => new Set(visible.map((v) => v.station.id)), [visible]);
+
+  // 3D car: the moving vehicle while navigating, otherwise the driver's current position.
+  const carPosition = navigation?.position ?? userLocation;
+  const carHeading = navigation?.heading ?? 0;
+  const car3d = useMemo(
+    () => (carPosition ? buildCarModel(carPosition, carHeading, carLengthForZoom(zoom, carPosition.lat)) : null),
+    [carPosition, carHeading, zoom],
+  );
 
   return (
     <div className="absolute inset-0" data-testid="map-container" data-view-mode={viewMode}>
@@ -181,6 +199,7 @@ export function SalvadorMap() {
         maxPitch={78}
         onLoad={onLoad}
         onClick={onMapClick}
+        onZoom={(e) => setZoom(Math.round(e.viewState.zoom * 4) / 4)}
         cursor={pickingLocation || stationForm.picking ? 'crosshair' : 'grab'}
         style={{ width: '100%', height: '100%' }}
         attributionControl={{ compact: true }}
@@ -203,6 +222,17 @@ export function SalvadorMap() {
         {accuracy && !navigating && (
           <Source id="ev-gps-accuracy" type="geojson" data={accuracy}>
             <Layer id="ev-gps-accuracy-fill" type="fill" paint={{ 'fill-color': ACCENT, 'fill-opacity': 0.12 }} />
+          </Source>
+        )}
+
+        {alternatives && (
+          <Source id="ev-route-alternatives" type="geojson" data={alternatives}>
+            <Layer
+              id="ev-route-alternatives-line"
+              type="line"
+              layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+              paint={{ 'line-color': '#8a8a8a', 'line-width': 4, 'line-opacity': 0.55, 'line-dasharray': [1.5, 1.5] }}
+            />
           </Source>
         )}
 
@@ -308,28 +338,31 @@ export function SalvadorMap() {
           </Marker>
         )}
 
-        {navigation && (
-          <Marker
-            longitude={navigation.position.lng}
-            latitude={navigation.position.lat}
-            anchor="center"
-            rotation={navigation.heading}
-            rotationAlignment="map"
-            pitchAlignment="map"
-          >
-            <svg width="34" height="34" viewBox="0 0 34 34" data-testid="nav-vehicle-marker">
-              <circle cx="17" cy="17" r="15" fill="#facc15" fillOpacity="0.18" />
-              <path d="M17 5 26 27 17 22 8 27Z" fill="#facc15" stroke="#0e0e0e" strokeWidth="1.5" strokeLinejoin="round" />
-            </svg>
-          </Marker>
+        {car3d && (
+          <Source id="ev-car-3d" type="geojson" data={car3d}>
+            <Layer
+              id="ev-car-3d"
+              type="fill-extrusion"
+              paint={{
+                'fill-extrusion-color': ['get', 'color'],
+                'fill-extrusion-base': ['get', 'base'],
+                'fill-extrusion-height': ['get', 'height'],
+                'fill-extrusion-opacity': 1,
+                'fill-extrusion-vertical-gradient': true,
+              }}
+            />
+          </Source>
         )}
 
+        {/* Invisible anchors so E2E tests can locate the car (the 3D model has no DOM node). */}
+        {navigation && (
+          <Marker longitude={navigation.position.lng} latitude={navigation.position.lat} anchor="center">
+            <span data-testid="nav-vehicle-marker" data-heading={Math.round(navigation.heading)} className="block h-px w-px" />
+          </Marker>
+        )}
         {userLocation && !navigating && (
           <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
-            <div data-testid="user-location-marker" className="relative flex h-5 w-5 items-center justify-center">
-              <span className="absolute h-5 w-5 rounded-full bg-accent/20" />
-              <span className="relative h-3 w-3 rounded-full border-2 border-base bg-accent shadow" />
-            </div>
+            <span data-testid="user-location-marker" className="block h-px w-px" />
           </Marker>
         )}
       </Map>

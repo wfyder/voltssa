@@ -15,7 +15,7 @@ import { computeProgress, pointAlong } from '../lib/navigation';
 import { isOpenAt } from '../lib/hours';
 import { ReservationEngine } from '../lib/reservationEngine';
 import type { SelfTestResult } from '../lib/qaSelfTest';
-import { buildSmartRoute, type SmartRoute } from '../lib/routing';
+import { buildSmartRoute, withOption, type SmartRoute } from '../lib/routing';
 import {
   loadUserStations,
   newStationId,
@@ -180,6 +180,8 @@ interface AppState {
   togglePowerSplit: (stationId: string) => void;
 
   traceRoute: (stationId: string) => Promise<void>;
+  /** Switch the active route to another planned alternative. */
+  selectRouteOption: (index: number) => void;
   clearRoute: () => void;
 
   /** Curated survey + stations added by the user. */
@@ -571,7 +573,7 @@ export const useAppStore = create<AppState>()((set, get) => {
 
     traceRoute: async (stationId) => {
       const station = STATION_BY_ID[stationId];
-      const { userLocation, simHour, vehicleId } = get();
+      const { userLocation, simHour, vehicleId, batteryPct } = get();
       if (!userLocation) {
         set({ routeState: { status: 'error', stationId, message: 'Defina sua localização no mapa primeiro.' } });
         return;
@@ -587,19 +589,33 @@ export const useAppStore = create<AppState>()((set, get) => {
       routeAbort = controller;
       set({ routeState: { status: 'loading', stationId } });
       try {
-        const route = await buildSmartRoute(userLocation, station.coords, VEHICLE_BY_ID[vehicleId], controller.signal, station.name);
+        const route = await buildSmartRoute(
+          userLocation,
+          station.coords,
+          VEHICLE_BY_ID[vehicleId],
+          batteryPct,
+          controller.signal,
+          station.name,
+        );
         if (controller.signal.aborted) return;
         set({ routeState: { status: 'ready', stationId, route } });
         get().logQa(
           'route',
           'info',
-          `Rota até ${station.name}: ${route.distanceKm.toFixed(1)} km, relevo ${route.energy.deltaPct >= 0 ? '+' : ''}${route.energy.deltaPct.toFixed(1)}% (${route.routingSource}/${route.elevationSource})`,
+          `Rota até ${station.name}: ${route.distanceKm.toFixed(1)} km, ${route.options.length} alternativa(s), relevo ${route.energy.deltaPct >= 0 ? '+' : ''}${route.energy.deltaPct.toFixed(1)}% — ${route.choiceReason} (${route.routingSource}/${route.elevationSource})`,
           stationId,
         );
       } catch (err) {
         if (controller.signal.aborted) return;
         set({ routeState: { status: 'error', stationId, message: (err as Error).message } });
       }
+    },
+
+    selectRouteOption: (index) => {
+      const { routeState, navigation } = get();
+      if (routeState.status !== 'ready' || navigation || !routeState.route.options[index]) return;
+      set({ routeState: { ...routeState, route: withOption(routeState.route, index) } });
+      get().logQa('route', 'info', `Alternativa ${index + 1} de rota selecionada manualmente`, routeState.stationId);
     },
 
     clearRoute: () => {
@@ -776,7 +792,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const batteryNow = nav.routeStartBatteryPct - ((current.energy.realKwh * progress.progress) / vehicle.batteryKwh) * 100;
       set({ navigation: { ...nav, rerouting: true } });
       try {
-        const route = await buildSmartRoute(nav.position, station.coords, vehicle, undefined, station.name);
+        const route = await buildSmartRoute(nav.position, station.coords, vehicle, Math.max(0, batteryNow), undefined, station.name);
         const latest = get().navigation;
         if (!latest) return;
         const start = pointAlong(route.geometry, 0);

@@ -74,6 +74,8 @@ export interface Vehicle {
   /** Flat-road consumption in kWh/km. */
   consumptionKwhPerKm: number;
   massKg: number;
+  /** Share of potential energy recovered by regenerative braking downhill (0–1). */
+  regenEfficiency: number;
   description: string;
 }
 

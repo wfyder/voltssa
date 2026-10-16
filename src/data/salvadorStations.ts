@@ -782,6 +782,7 @@ export const VEHICLES: Vehicle[] = [
     maxDcKw: 40,
     consumptionKwhPerKm: 0.125,
     massKg: 1239,
+    regenEfficiency: 0.62,
     description: '38 kWh · CCS2 / Tipo 2',
   },
   {
@@ -793,6 +794,7 @@ export const VEHICLES: Vehicle[] = [
     maxDcKw: 153,
     consumptionKwhPerKm: 0.17,
     massKg: 1850,
+    regenEfficiency: 0.7,
     description: '69 kWh · CCS2 / Tipo 2',
   },
   {
@@ -804,6 +806,7 @@ export const VEHICLES: Vehicle[] = [
     maxDcKw: 50,
     consumptionKwhPerKm: 0.165,
     massKg: 1580,
+    regenEfficiency: 0.55,
     description: '40 kWh · CHAdeMO / Tipo 2',
   },
   {
@@ -815,6 +818,7 @@ export const VEHICLES: Vehicle[] = [
     maxDcKw: 0,
     consumptionKwhPerKm: 0.19,
     massKg: 1900,
+    regenEfficiency: 0.5,
     description: '18 kWh · Só Tipo 2 (AC)',
   },
 ];

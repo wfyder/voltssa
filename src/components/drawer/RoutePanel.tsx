@@ -1,6 +1,6 @@
 import { VEHICLE_BY_ID } from '../../data/salvadorStations';
 import { isOpenAt } from '../../lib/hours';
-import { formatDuration, formatKwh } from '../../lib/utils';
+import { cn, formatDuration, formatKwh } from '../../lib/utils';
 import { useAppStore } from '../../store/useAppStore';
 import type { Station } from '../../types';
 import { Button, Notice, Section, Stat } from '../ui';
@@ -15,6 +15,7 @@ export function RoutePanel({ station }: { station: Station }) {
   const clearRoute = useAppStore((s) => s.clearRoute);
   const setPickingLocation = useAppStore((s) => s.setPickingLocation);
   const startNavigation = useAppStore((s) => s.startNavigation);
+  const selectRouteOption = useAppStore((s) => s.selectRouteOption);
   const locationSource = useAppStore((s) => s.locationSource);
   const vehicleId = useAppStore((s) => s.vehicleId);
   const batteryPct = useAppStore((s) => s.batteryPct);
@@ -103,6 +104,44 @@ export function RoutePanel({ station }: { station: Station }) {
             </p>
           </Section>
 
+          <Section title="Como a rota foi escolhida">
+            <p className="text-sm text-fg-2" data-testid="route-choice-reason">
+              {route.chosenIndex === route.recommendedIndex
+                ? route.choiceReason
+                : 'Você escolheu outra alternativa. A recomendada está marcada abaixo.'}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              Considera o relevo de cada caminho, o peso do {vehicle.name} ({vehicle.massKg} kg), a regeneração dele
+              ({Math.round(vehicle.regenEfficiency * 100)}%) e sua bateria atual ({batteryPct}%).
+            </p>
+            {route.options.length > 1 && (
+              <ul className="mt-3 divide-y divide-line rounded-md border border-line" data-testid="route-options">
+                {route.options.map((opt, i) => {
+                  const ev = route.evaluations[i];
+                  const active = i === route.chosenIndex;
+                  return (
+                    <li key={i}>
+                      <button
+                        type="button"
+                        data-testid={`route-option-${i}`}
+                        data-active={active}
+                        onClick={() => selectRouteOption(i)}
+                        className={cn('flex w-full items-center gap-3 px-3 py-2 text-left text-xs', active ? 'bg-surface-3' : 'hover:bg-surface-2')}
+                      >
+                        <span className={cn('h-2 w-2 shrink-0 rounded-full', active ? 'bg-accent' : 'bg-faint')} />
+                        <span className="flex-1 tabular-nums text-fg-2">
+                          {opt.distanceKm.toFixed(1)} km · {formatDuration(opt.durationMin)} · {formatKwh(ev.energyKwh)} · chega com{' '}
+                          <span className={ev.reachable ? 'text-fg' : 'text-red-400'}>{Math.max(0, ev.arrivalPct).toFixed(0)}%</span>
+                        </span>
+                        {i === route.recommendedIndex && <span className="text-accent">recomendada</span>}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Section>
+
           <Section title="Resumo">
             <div className="grid grid-cols-3 gap-3">
               <Stat label="Distância" value={`${route.distanceKm.toFixed(1)} km`} testId="route-distance" />
@@ -150,7 +189,7 @@ export function RoutePanel({ station }: { station: Station }) {
                   <td className="py-2 text-right tabular-nums">+{formatKwh(route.energy.climbKwh)}</td>
                 </tr>
                 <tr className="border-b border-line">
-                  <td className="py-2 text-fg-2">Regeneração nas descidas</td>
+                  <td className="py-2 text-fg-2">Regeneração nas descidas ({Math.round(vehicle.regenEfficiency * 100)}%)</td>
                   <td className="py-2 text-right tabular-nums">−{formatKwh(route.energy.regenKwh)}</td>
                 </tr>
                 <tr>

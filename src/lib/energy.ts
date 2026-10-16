@@ -4,8 +4,6 @@ const G = 9.81;
 const J_PER_KWH = 3_600_000;
 /** Motor + inverter efficiency when climbing. */
 export const DRIVETRAIN_EFFICIENCY = 0.88;
-/** Share of potential energy recovered by regenerative braking downhill. */
-export const REGEN_EFFICIENCY = 0.6;
 
 export interface ProfilePoint {
   distanceKm: number;
@@ -28,7 +26,7 @@ export interface TopographyEnergy {
 
 /**
  * Consumption adjusted by relief:
- *   E_real = E_flat + Σ m·g·Δh⁺ / η_drive − Σ m·g·Δh⁻ · η_regen
+ *   E_real = E_flat + Σ m·g·Δh⁺ / η_drive − Σ m·g·Δh⁻ · η_regen(vehicle)
  */
 export function computeTopographyEnergy(vehicle: Vehicle, profile: ProfilePoint[]): TopographyEnergy {
   const distanceKm = profile.length > 0 ? profile[profile.length - 1].distanceKm : 0;
@@ -46,7 +44,7 @@ export function computeTopographyEnergy(vehicle: Vehicle, profile: ProfilePoint[
   }
 
   const climbKwh = (vehicle.massKg * G * ascentM) / J_PER_KWH / DRIVETRAIN_EFFICIENCY;
-  const regenKwh = ((vehicle.massKg * G * descentM) / J_PER_KWH) * REGEN_EFFICIENCY;
+  const regenKwh = ((vehicle.massKg * G * descentM) / J_PER_KWH) * vehicle.regenEfficiency;
   const realKwh = Math.max(0, flatKwh + climbKwh - regenKwh);
   const elevations = profile.map((p) => p.elevationM);
 
