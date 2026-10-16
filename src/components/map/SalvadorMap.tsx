@@ -1,5 +1,5 @@
 import * as turf from '@turf/turf';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import Map, {
   Layer,
   Marker,
@@ -20,7 +20,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { applyNightTheme, MAP_STYLE_URL, mapHandle, removeNightTheme, setupTerrainAndBuildings } from './mapSetup';
 import { StationMarker } from './StationMarker';
 import { CameraControls } from './CameraControls';
-import { buildCarModel, carLengthForZoom } from '../../lib/car3d';
+import { CAR_LAYER_ID, createCar3dLayer, type CarPose } from './car3dLayer';
 import { viewPadding } from './viewPadding';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { salvadorProximity } from '../../lib/geolocation';
@@ -29,8 +29,8 @@ const ACCENT = '#facc15';
 
 export function SalvadorMap() {
   const mapRef = useRef<MapRef | null>(null);
-  // Quantised zoom: the 3D car is rebuilt so it keeps a constant on-screen size.
-  const [zoom, setZoom] = useState(INITIAL_VIEW.zoom);
+  // Pose read by the Three.js car layer on every frame.
+  const carPoseRef = useRef<CarPose | null>(null);
   const { all, visible } = useStationViews();
 
   const viewMode = useAppStore((s) => s.viewMode);
@@ -59,6 +59,7 @@ export function SalvadorMap() {
     if (!map) return;
     mapHandle.current = mapRef.current;
     setupTerrainAndBuildings(map);
+    if (!map.getLayer(CAR_LAYER_ID)) map.addLayer(createCar3dLayer(() => carPoseRef.current));
     const state = useAppStore.getState();
     if (state.nightMap) applyNightTheme(map);
     // The map remounts when switching layouts (e.g. car mode): start on the driver, not the city view.
@@ -185,10 +186,10 @@ export function SalvadorMap() {
   // 3D car: the moving vehicle while navigating, otherwise the driver's current position.
   const carPosition = navigation?.position ?? userLocation;
   const carHeading = navigation?.heading ?? 0;
-  const car3d = useMemo(
-    () => (carPosition ? buildCarModel(carPosition, carHeading, carLengthForZoom(zoom, carPosition.lat)) : null),
-    [carPosition, carHeading, zoom],
-  );
+  useEffect(() => {
+    carPoseRef.current = carPosition ? { position: carPosition, heading: carHeading } : null;
+    mapRef.current?.getMap().triggerRepaint();
+  }, [carPosition, carHeading]);
 
   return (
     <div className="absolute inset-0" data-testid="map-container" data-view-mode={viewMode}>
@@ -199,7 +200,6 @@ export function SalvadorMap() {
         maxPitch={78}
         onLoad={onLoad}
         onClick={onMapClick}
-        onZoom={(e) => setZoom(Math.round(e.viewState.zoom * 4) / 4)}
         cursor={pickingLocation || stationForm.picking ? 'crosshair' : 'grab'}
         style={{ width: '100%', height: '100%' }}
         attributionControl={{ compact: true }}
@@ -336,22 +336,6 @@ export function SalvadorMap() {
               <path d="M12 8v9M7.5 12.5h9" stroke="#facc15" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </Marker>
-        )}
-
-        {car3d && (
-          <Source id="ev-car-3d" type="geojson" data={car3d}>
-            <Layer
-              id="ev-car-3d"
-              type="fill-extrusion"
-              paint={{
-                'fill-extrusion-color': ['get', 'color'],
-                'fill-extrusion-base': ['get', 'base'],
-                'fill-extrusion-height': ['get', 'height'],
-                'fill-extrusion-opacity': 1,
-                'fill-extrusion-vertical-gradient': true,
-              }}
-            />
-          </Source>
         )}
 
         {/* Invisible anchors so E2E tests can locate the car (the 3D model has no DOM node). */}

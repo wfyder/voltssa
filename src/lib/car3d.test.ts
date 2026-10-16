@@ -1,37 +1,46 @@
-import * as turf from '@turf/turf';
 import { describe, expect, it } from 'vitest';
-import { buildCarModel, carLengthForZoom, metersPerPixel } from './car3d';
+import { carBasis, carLengthForZoom, carModelMatrix, CAR_MODEL_LENGTH_M, CAR_SCREEN_PX, metersPerPixel } from './car3d';
 
-const center = { lat: -12.9718, lng: -38.5128 };
-const centroidOf = (model: ReturnType<typeof buildCarModel>, part: string) =>
-  turf.centroid(model.features.find((f) => f.properties.part === part)!).geometry.coordinates;
+const lat = -12.9718;
+const apply = (m: number[], [x, y, z]: [number, number, number]) => [
+  m[0] * x + m[4] * y + m[8] * z + m[12],
+  m[1] * x + m[5] * y + m[9] * z + m[13],
+  m[2] * x + m[6] * y + m[10] * z + m[14],
+];
 
-describe('3D car miniature', () => {
-  it('has body, glass cabin, roof, four wheels and lights', () => {
-    const parts = buildCarModel(center, 0, 10).features.map((f) => f.properties.part);
-    expect(parts).toEqual(expect.arrayContaining(['body', 'cabin', 'roof', 'headlight-l', 'taillight-r']));
-    expect(parts.filter((p) => p.startsWith('wheel'))).toHaveLength(4);
+describe('3D car placement', () => {
+  it('faces north/east/south/west in mercator space (y grows southward)', () => {
+    const fwd = (h: number) => carBasis(h).forward.map((v) => Math.round(v * 1000) / 1000 + 0);
+    expect(fwd(0)).toEqual([0, -1, 0]); // north
+    expect(fwd(90)).toEqual([1, 0, 0]); // east
+    expect(fwd(180)).toEqual([0, 1, 0]); // south
+    expect(fwd(270)).toEqual([-1, 0, 0]); // west
   });
 
-  it('stacks parts upward and scales heights with the length', () => {
-    const model = buildCarModel(center, 0, 10);
-    const get = (part: string) => model.features.find((f) => f.properties.part === part)!.properties;
-    expect(get('roof').height).toBeGreaterThan(get('cabin').height);
-    expect(get('cabin').height).toBeGreaterThan(get('body').height);
-    expect(get('roof').height).toBeCloseTo(3.4, 5);
-  });
-
-  it('points the headlights along the heading', () => {
-    for (const heading of [0, 90, 225]) {
-      const model = buildCarModel(center, heading, 40);
-      const bearing = turf.bearing(centroidOf(model, 'taillight-l'), centroidOf(model, 'headlight-l'));
-      expect(Math.abs((((bearing - heading) % 360) + 540) % 360 - 180)).toBeLessThan(2);
+  it('keeps right perpendicular to forward and up pointing to the sky', () => {
+    for (const h of [0, 37, 145, 300]) {
+      const { right, up, forward } = carBasis(h);
+      expect(right[0] * forward[0] + right[1] * forward[1]).toBeCloseTo(0, 10);
+      expect(up).toEqual([0, 0, 1]);
+      // right is the forward vector turned 90° clockwise (seen from above).
+      expect(carBasis(h + 90).forward[0]).toBeCloseTo(right[0], 10);
+      expect(carBasis(h + 90).forward[1]).toBeCloseTo(right[1], 10);
     }
   });
 
+  it('maps the model into mercator space at the car position', () => {
+    const m = carModelMatrix(90, [0.4, 0.6, 0.001], 2);
+    expect(apply(m, [0, 0, 0])).toEqual([0.4, 0.6, 0.001]);
+    const nose = apply(m, [0, 0, 1]); // 1 m forward, heading east
+    expect(nose[0]).toBeCloseTo(2.4, 10);
+    expect(nose[1]).toBeCloseTo(0.6, 10);
+    const roof = apply(m, [0, 1, 0]);
+    expect(roof[2]).toBeCloseTo(2.001, 10);
+  });
+
   it('keeps a constant on-screen size across zoom levels', () => {
-    expect(carLengthForZoom(16, center.lat) / carLengthForZoom(17, center.lat)).toBeCloseTo(2, 5);
-    expect(carLengthForZoom(17, center.lat)).toBeCloseTo(46 * metersPerPixel(17, center.lat), 5);
-    expect(carLengthForZoom(22, center.lat)).toBe(4.5); // never smaller than a real car
+    expect(carLengthForZoom(16, lat) / carLengthForZoom(17, lat)).toBeCloseTo(2, 5);
+    expect(carLengthForZoom(17, lat)).toBeCloseTo(CAR_SCREEN_PX * metersPerPixel(17, lat), 5);
+    expect(carLengthForZoom(22, lat)).toBe(CAR_MODEL_LENGTH_M); // never smaller than a real car
   });
 });
