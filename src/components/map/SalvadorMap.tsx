@@ -20,6 +20,9 @@ import { useAppStore } from '../../store/useAppStore';
 import { applyNightTheme, MAP_STYLE_URL, mapHandle, removeNightTheme, setupTerrainAndBuildings } from './mapSetup';
 import { StationMarker } from './StationMarker';
 import { CameraControls } from './CameraControls';
+import { viewPadding } from './viewPadding';
+import { useIsMobile } from '../../hooks/useMediaQuery';
+import { salvadorProximity } from '../../lib/geolocation';
 
 const ACCENT = '#facc15';
 
@@ -40,6 +43,10 @@ export function SalvadorMap() {
   const nightMap = useAppStore((s) => s.nightMap);
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const navigation = useAppStore((s) => s.navigation);
+  const locationSource = useAppStore((s) => s.locationSource);
+  const locationAccuracyM = useAppStore((s) => s.locationAccuracyM);
+  const carMode = useAppStore((s) => s.carMode);
+  const isMobile = useIsMobile();
   const navProgress = useNavProgress();
   const navigating = navigation !== null;
   const smartCity = viewMode === 'smartcity';
@@ -49,7 +56,12 @@ export function SalvadorMap() {
     if (!map) return;
     mapHandle.current = mapRef.current;
     setupTerrainAndBuildings(map);
-    if (useAppStore.getState().nightMap) applyNightTheme(map);
+    const state = useAppStore.getState();
+    if (state.nightMap) applyNightTheme(map);
+    // The map remounts when switching layouts (e.g. car mode): start on the driver, not the city view.
+    if (state.userLocation && !state.navigation && salvadorProximity(state.userLocation).proximity !== 'far') {
+      map.jumpTo({ center: [state.userLocation.lng, state.userLocation.lat], zoom: 14.5, padding: viewPadding('follow') });
+    }
   }, []);
 
   useEffect(() => {
@@ -77,7 +89,7 @@ export function SalvadorMap() {
       center: [station.coords.lng, station.coords.lat],
       zoom: Math.max(map.getZoom(), 14.6),
       duration: 1200,
-      padding: { top: 40, bottom: 40, left: sidebarOpen ? 340 : 0, right: 420 },
+      padding: viewPadding('station'),
       essential: true,
     });
   }, [selectedStationId, sidebarOpen]);
@@ -91,9 +103,22 @@ export function SalvadorMap() {
         [minX, minY],
         [maxX, maxY],
       ],
-      { padding: { top: 100, bottom: 100, left: sidebarOpen ? 380 : 60, right: 460 }, duration: 1400, pitch: 55 },
+      { padding: viewPadding('route'), duration: 1400, pitch: 55 },
     );
   }, [routeState, sidebarOpen]);
+
+  // A fresh GPS fix: fly to the driver (unless they are far from Salvador or already driving).
+  useEffect(() => {
+    if (!userLocation || locationSource !== 'gps' || useAppStore.getState().navigation) return;
+    if (salvadorProximity(userLocation).proximity === 'far') return;
+    mapRef.current?.flyTo({
+      center: [userLocation.lng, userLocation.lat],
+      zoom: 14.5,
+      duration: 1400,
+      padding: viewPadding('follow'),
+      essential: true,
+    });
+  }, [userLocation, locationSource]);
 
   const onMapClick = useCallback(
     (e: MapLayerMouseEvent) => {
@@ -110,6 +135,13 @@ export function SalvadorMap() {
 
   const rangeKm = autonomyKm(VEHICLE_BY_ID[vehicleId], batteryPct);
   const autonomy = useMemo(() => (userLocation ? autonomyCircle(userLocation, rangeKm) : null), [userLocation, rangeKm]);
+  const accuracy = useMemo(
+    () =>
+      userLocation && locationSource === 'gps' && locationAccuracyM
+        ? autonomyCircle(userLocation, Math.max(locationAccuracyM, 8) / 1000)
+        : null,
+    [userLocation, locationSource, locationAccuracyM],
+  );
 
   const heatmapData = useMemo(
     () => stationsToFeatureCollection(all.map((v) => v.station), (s) => Math.min(1, maxPowerKw(s) / 77) + 0.35),
@@ -153,8 +185,9 @@ export function SalvadorMap() {
         style={{ width: '100%', height: '100%' }}
         attributionControl={{ compact: true }}
       >
-        <NavigationControl position="bottom-right" visualizePitch />
-        <ScaleControl position="bottom-right" unit="metric" />
+        {/* Phones and car mode zoom with gestures; the extra controls would cover touch targets. */}
+        {!isMobile && !carMode && <NavigationControl position="bottom-right" visualizePitch />}
+        {!isMobile && !carMode && <ScaleControl position="bottom-right" unit="metric" />}
 
         {autonomy && !navigating && (
           <Source id="ev-autonomy" type="geojson" data={autonomy}>
@@ -164,6 +197,12 @@ export function SalvadorMap() {
               type="line"
               paint={{ 'line-color': ACCENT, 'line-width': 1.5, 'line-dasharray': [3, 2], 'line-opacity': 0.7 }}
             />
+          </Source>
+        )}
+
+        {accuracy && !navigating && (
+          <Source id="ev-gps-accuracy" type="geojson" data={accuracy}>
+            <Layer id="ev-gps-accuracy-fill" type="fill" paint={{ 'fill-color': ACCENT, 'fill-opacity': 0.12 }} />
           </Source>
         )}
 
@@ -321,7 +360,7 @@ export function SalvadorMap() {
         </div>
       )}
 
-      {!navigating && <CameraControls />}
+      {!navigating && !carMode && <CameraControls />}
     </div>
   );
 }

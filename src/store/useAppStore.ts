@@ -10,6 +10,7 @@ import {
 import { isCompatible, isRestricted } from '../lib/compatibility';
 import { resolveOfficialStatus, validateReport } from '../lib/crowd';
 import { offsetCoords } from '../lib/geo';
+import { getCurrentFix, LocateError, LOCATE_MESSAGE, salvadorProximity } from '../lib/geolocation';
 import { computeProgress, pointAlong } from '../lib/navigation';
 import { isOpenAt } from '../lib/hours';
 import { ReservationEngine } from '../lib/reservationEngine';
@@ -126,6 +127,13 @@ interface AppState {
   drawerTab: DrawerTab;
   userLocation: Coordinates | null;
   pickingLocation: boolean;
+  /** Where the current location came from: device GPS or a click on the map. */
+  locationSource: 'gps' | 'manual' | null;
+  locationAccuracyM: number | null;
+  locationStatus: 'idle' | 'locating' | 'ok' | 'error';
+  locationNotice: string | null;
+  /** CarPlay-style large-touch layout. */
+  carMode: boolean;
   routeState: RouteState;
   qaLog: QaEvent[];
   fraudAlert: FraudAlert | null;
@@ -146,7 +154,12 @@ interface AppState {
   selectStation: (id: string | null, tab?: DrawerTab) => void;
   setDrawerTab: (tab: DrawerTab) => void;
   setPickingLocation: (value: boolean) => void;
-  setUserLocation: (coords: Coordinates | null) => void;
+  setUserLocation: (coords: Coordinates | null, source?: 'gps' | 'manual', accuracyM?: number | null) => void;
+  locateMe: () => Promise<boolean>;
+  dismissLocationNotice: () => void;
+  setCarMode: (on: boolean) => void;
+  /** One tap: locate if needed, trace the route and start turn-by-turn navigation. */
+  quickNavigate: (stationId: string) => Promise<void>;
   simulatePresenceAt: (stationId: string) => void;
   setQaPanelOpen: (open: boolean) => void;
   setNightMap: (value: boolean) => void;
@@ -321,6 +334,11 @@ export const useAppStore = create<AppState>()((set, get) => {
     qaLog: [],
     fraudAlert: null,
     qaPanelOpen: false,
+    locationSource: null,
+    locationAccuracyM: null,
+    locationStatus: 'idle',
+    locationNotice: null,
+    carMode: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('modo') === 'carro',
     nightMap: true,
     simulatedReporters: 0,
     selfTests: null,
@@ -340,10 +358,59 @@ export const useAppStore = create<AppState>()((set, get) => {
     selectStation: (id, tab = 'overview') => set({ selectedStationId: id, drawerTab: tab }),
     setDrawerTab: (tab) => set({ drawerTab: tab }),
     setPickingLocation: (value) => set({ pickingLocation: value }),
-    setUserLocation: (coords) => {
-      set({ userLocation: coords, pickingLocation: false });
+    setUserLocation: (coords, source = 'manual', accuracyM = null) => {
+      set({
+        userLocation: coords,
+        pickingLocation: false,
+        locationSource: coords ? source : null,
+        locationAccuracyM: coords ? accuracyM : null,
+      });
       const rs = get().routeState;
       if (rs.status !== 'idle') get().clearRoute();
+    },
+
+    locateMe: async () => {
+      set({ locationStatus: 'locating', locationNotice: null, pickingLocation: false });
+      try {
+        const fix = await getCurrentFix();
+        get().setUserLocation(fix.coords, 'gps', fix.accuracyM);
+        const { proximity, distanceKm } = salvadorProximity(fix.coords);
+        set({
+          locationStatus: 'ok',
+          locationNotice:
+            proximity === 'far'
+              ? `Você está a ${Math.round(distanceKm)} km de Salvador. Os postos e rotas do app são da cidade.`
+              : null,
+        });
+        get().logQa('route', 'info', `Localização obtida pelo GPS (precisão de ${Math.round(fix.accuracyM)} m, ${proximity})`);
+        return true;
+      } catch (err) {
+        const message = err instanceof LocateError ? err.message : LOCATE_MESSAGE.unavailable;
+        set({ locationStatus: 'error', locationNotice: message });
+        get().logQa('route', 'warn', `Falha ao obter localização: ${message}`);
+        return false;
+      }
+    },
+
+    dismissLocationNotice: () => set({ locationNotice: null }),
+
+    setCarMode: (on) => {
+      set({ carMode: on, selectedStationId: null, qaPanelOpen: false, viewMode: 'driver' });
+      try {
+        const url = new URL(window.location.href);
+        if (on) url.searchParams.set('modo', 'carro');
+        else url.searchParams.delete('modo');
+        window.history.replaceState(null, '', url);
+      } catch {
+        /* history unavailable */
+      }
+    },
+
+    quickNavigate: async (stationId) => {
+      if (!get().userLocation && !(await get().locateMe())) return;
+      await get().traceRoute(stationId);
+      if (get().routeState.status !== 'ready') return;
+      get().startNavigation(get().locationSource === 'gps' ? 'gps' : 'simulated');
     },
     simulatePresenceAt: (stationId) => {
       const station = STATION_BY_ID[stationId];
@@ -650,7 +717,7 @@ export const useAppStore = create<AppState>()((set, get) => {
       const position = nav.arrived ? offsetCoords(STATION_BY_ID[nav.stationId].coords, 15, 200) : nav.position;
       set({ navigation: null, sidebarOpen: true });
       // Leave the driver where the trip ended, so on-site actions (check-in, reports) work.
-      get().setUserLocation(position);
+      get().setUserLocation(position, nav.mode === 'gps' ? 'gps' : 'manual');
       get().selectStation(nav.stationId, openTab);
     },
 

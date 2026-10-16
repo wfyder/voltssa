@@ -3,6 +3,7 @@ import { useNavProgress } from '../../hooks/useNavProgress';
 import { OFF_ROUTE_M, spokenDistance } from '../../lib/navigation';
 import { useAppStore } from '../../store/useAppStore';
 import { mapHandle } from '../map/mapSetup';
+import { viewPadding } from '../map/viewPadding';
 
 const TICK_MS = 250;
 const PRE_ANNOUNCE_M = 200;
@@ -82,7 +83,7 @@ export function NavigationController() {
       zoom: 17,
       duration: TICK_MS + 50,
       easing: (t) => t,
-      padding: { top: 160, bottom: 140, left: 0, right: 0 },
+      padding: viewPadding('follow'),
     });
   }, [navigation?.position, navigation?.heading, navigation?.follow, navigation?.arrived]);
 

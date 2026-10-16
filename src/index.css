@@ -31,6 +31,13 @@ body {
   color: var(--color-fg);
   color-scheme: dark;
   -webkit-font-smoothing: antialiased;
+  /* Phones: no pull-to-refresh or rubber-banding while panning the map. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  touch-action: manipulation;
 }
 
 /* Selected map pin: one short lift, then rest. */
@@ -104,4 +111,16 @@ details > summary::-webkit-details-marker {
 }
 .maplibregl-ctrl-bottom-right {
   bottom: 56px;
+}
+
+/* Phones: keep the map attribution visible above the station sheet. */
+@media (max-width: 767px) {
+  .maplibregl-ctrl-bottom-right {
+    bottom: calc(132px + env(safe-area-inset-bottom));
+  }
+}
+
+/* Car mode: attribution clear of the side panel and the big buttons. */
+[data-testid='car-mode'] .maplibregl-ctrl-bottom-right {
+  bottom: 96px;
 }

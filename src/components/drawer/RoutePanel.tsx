@@ -15,6 +15,7 @@ export function RoutePanel({ station }: { station: Station }) {
   const clearRoute = useAppStore((s) => s.clearRoute);
   const setPickingLocation = useAppStore((s) => s.setPickingLocation);
   const startNavigation = useAppStore((s) => s.startNavigation);
+  const locationSource = useAppStore((s) => s.locationSource);
   const vehicleId = useAppStore((s) => s.vehicleId);
   const batteryPct = useAppStore((s) => s.batteryPct);
   const simHour = useAppStore((s) => s.simHour);
@@ -78,21 +79,27 @@ export function RoutePanel({ station }: { station: Station }) {
         <>
           <Section title="Navegação">
             <div className="flex gap-2">
-              <Button testId="btn-start-navigation" onClick={() => startNavigation('simulated')} className="flex-1">
+              <Button
+                testId="btn-start-navigation"
+                onClick={() => startNavigation(locationSource === 'gps' ? 'gps' : 'simulated')}
+                className="flex-1"
+              >
                 Iniciar navegação
               </Button>
               <Button
-                testId="btn-start-navigation-gps"
+                testId={locationSource === 'gps' ? 'btn-start-navigation-sim' : 'btn-start-navigation-gps'}
                 variant="secondary"
-                onClick={() => startNavigation('gps')}
-                title="Usa o GPS do aparelho (precisa estar em Salvador)"
+                onClick={() => startNavigation(locationSource === 'gps' ? 'simulated' : 'gps')}
+                title={locationSource === 'gps' ? 'Percorre a rota sozinho, para testar' : 'Usa o GPS do aparelho (precisa estar em Salvador)'}
               >
-                Usar meu GPS
+                {locationSource === 'gps' ? 'Simular' : 'Usar meu GPS'}
               </Button>
             </div>
             <p className="mt-2 text-xs text-muted">
-              Passo a passo com voz, câmera seguindo o carro e recálculo automático se você sair da rota. A navegação simulada
-              percorre a rota sozinha; a de GPS acompanha sua posição real.
+              Passo a passo com voz, câmera seguindo o carro e recálculo automático se você sair da rota.{' '}
+              {locationSource === 'gps'
+                ? 'Usa sua posição real pelo GPS; "Simular" percorre a rota sozinho.'
+                : 'Como sua posição foi marcada no mapa, a navegação será simulada; "Usar meu GPS" acompanha sua posição real.'}
             </p>
           </Section>
 

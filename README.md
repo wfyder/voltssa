@@ -39,6 +39,20 @@ npm run build      # typecheck + build de produção
   (queda OCPP, divisão de potência, relatório de testes).
 - **Cadastro de postos:** adicionar, editar e remover postos, com validações (dentro de Salvador, potência coerente
   com o plugue, duplicatas).
+- **Localização atual:** pede o GPS ao abrir o app e no botão "Minha localização", com aviso de permissão negada,
+  precisão no mapa e alerta quando você está fora de Salvador.
+- **Mobile:** layout próprio para celular (lista e detalhes em painéis deslizantes, botões grandes) e instalável
+  como app (PWA).
+- **Modo carro (estilo CarPlay):** tela de toque fácil e sem digitação, com os postos utilizáveis mais próximos e
+  um "Ir" que já inicia a navegação. Abra pelo botão "Modo carro" ou com `?modo=carro` na URL.
+
+## Celular e GPS
+
+`npm run dev` também expõe o app na rede local. O navegador só libera o GPS em HTTPS (ou `localhost`), então para
+testar a localização no celular use um endereço HTTPS (por exemplo, um deploy no Vercel, Netlify ou GitHub Pages).
+
+O modo carro é uma interface web para celular no suporte ou navegador do carro. Rodar dentro do CarPlay exige um
+app iOS nativo (CarPlay framework, categoria *EV charging*) com autorização da Apple.
 
 ## Estrutura
 

@@ -6,6 +6,7 @@ import { nearestStation } from '../../lib/geo';
 import { isOpenAt } from '../../lib/hours';
 import { exportReport } from '../../lib/report';
 import { formatDistance } from '../../lib/utils';
+import { useIsMobile } from '../../hooks/useMediaQuery';
 import { useAppStore } from '../../store/useAppStore';
 import type { Station } from '../../types';
 import { Button, Section, Select, Stat } from '../ui';
@@ -24,7 +25,8 @@ export function SmartCityPanel() {
   const togglePowerSplit = useAppStore((s) => s.togglePowerSplit);
   const selectStation = useAppStore((s) => s.selectStation);
   const [splitStationId, setSplitStationId] = useState(stations.filter(isPublicDc)[0].id);
-  const [collapsed, setCollapsed] = useState(false);
+  const isMobile = useIsMobile();
+  const [collapsed, setCollapsed] = useState(isMobile);
 
   const kpis = useMemo(() => {
     const total = stations.length;
@@ -63,8 +65,8 @@ export function SmartCityPanel() {
   return (
     <aside
       data-testid="smartcity-panel"
-      style={{ right: selectedStationId ? 412 : 12 }}
-      className="ev-scroll absolute top-3 bottom-16 z-20 w-[340px] max-w-[calc(100%-1.5rem)] overflow-y-auto rounded-md border border-line bg-surface px-4 py-4 shadow-sm transition-[right] duration-300"
+      style={isMobile ? undefined : { right: selectedStationId ? 412 : 12 }}
+      className="ev-scroll absolute top-3 bottom-16 z-20 w-[340px] max-w-[calc(100%-1.5rem)] overflow-y-auto rounded-md border border-line bg-surface px-4 py-4 shadow-sm transition-[right] duration-300 max-md:fixed max-md:inset-x-0 max-md:top-auto max-md:bottom-0 max-md:z-[25] max-md:max-h-[70dvh] max-md:w-full max-md:max-w-none max-md:rounded-b-none max-md:pb-[max(1rem,env(safe-area-inset-bottom))]"
     >
       <header className="mb-4 flex items-start justify-between gap-2">
         <div>

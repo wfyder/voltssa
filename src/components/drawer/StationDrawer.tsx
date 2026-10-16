@@ -46,12 +46,17 @@ export function StationDrawer() {
       aria-hidden={!open}
       className={cn(
         'absolute top-0 right-0 bottom-0 z-20 flex w-[400px] max-w-full flex-col border-l border-line bg-surface transition-transform duration-300',
-        open ? 'translate-x-0 shadow-xl shadow-black/40' : 'translate-x-full',
+        // Phones: a bottom sheet over the map instead of a side panel.
+        'max-md:fixed max-md:top-auto max-md:z-30 max-md:h-[82dvh] max-md:w-full max-md:rounded-t-xl max-md:border-t max-md:border-l-0 max-md:pb-[env(safe-area-inset-bottom)]',
+        open
+          ? 'translate-x-0 shadow-xl shadow-black/40 max-md:translate-y-0'
+          : 'translate-x-full max-md:translate-x-0 max-md:translate-y-full',
       )}
     >
       {station && runtime && (
         <>
-          <div className="px-5 pt-4">
+          <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-line-strong md:hidden" />
+          <div className="px-5 pt-4 max-md:pt-2">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="text-lg font-semibold text-fg" data-testid="drawer-station-name">
@@ -64,7 +69,7 @@ export function StationDrawer() {
                 data-testid="btn-close-drawer"
                 aria-label="Fechar detalhes"
                 onClick={() => selectStation(null)}
-                className="-mr-1.5 rounded p-1.5 text-faint hover:bg-surface-3 hover:text-fg"
+                className="-mr-1.5 rounded p-1.5 text-faint hover:bg-surface-3 hover:text-fg max-md:p-2.5"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -121,7 +126,7 @@ export function StationDrawer() {
             )}
           </div>
 
-          <nav className="mt-3 flex gap-5 border-b border-line px-5" role="tablist">
+          <nav className="ev-scroll mt-3 flex gap-5 overflow-x-auto border-b border-line px-5" role="tablist">
             {tabs.map(({ id, label }) => (
               <button
                 key={id}
@@ -131,7 +136,7 @@ export function StationDrawer() {
                 data-testid={`drawer-tab-${id}`}
                 onClick={() => setDrawerTab(id)}
                 className={cn(
-                  '-mb-px border-b-2 py-2 text-sm transition-colors',
+                  '-mb-px shrink-0 border-b-2 py-2 text-sm transition-colors max-md:py-3',
                   activeTab === id
                     ? 'border-accent text-fg'
                     : 'border-transparent text-muted hover:text-fg',
